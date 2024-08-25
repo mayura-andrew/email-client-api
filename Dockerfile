@@ -11,7 +11,7 @@ RUN go build -o app ./cmd/api
 
 EXPOSE 4000
 
-ENV DB_DSN= \
+ENV DB_DSN= postgres://user:password@host.docker.internal:5432/emailclient?sslmode=disable \
     SMTPPORT= \
     SMTPSENDER= \
     SMTPHOST= \
