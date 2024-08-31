@@ -14,6 +14,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/golang-migrate/migrate/v4"
+	_ "github.com/golang-migrate/migrate/v4/source/file"
+	"github.com/golang-migrate/migrate/v4/database/postgres"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 	"github.com/mayura-andrew/email-client/internal/data"
@@ -146,6 +149,11 @@ func main() {
 
 	logger.PrintInfo("database connection pool established", map[string]string{})
 
+	err = runMigration(db)
+	if err != nil {
+		logger.PrintFatal(err, map[string]string{})
+	}
+
 	app := &application{
 		config: cfg,
 		logger: logger,
@@ -177,13 +185,41 @@ func openDB(cfg config) (*sql.DB, error) {
 
 	db.SetConnMaxIdleTime(duration)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	maxRetries := 10
+	for i := 0; i < maxRetries; i++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
 
-	err = db.PingContext(ctx)
-	if err != nil {
-		return nil, err
+		err = db.PingContext(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		log.Printf("Database not ready, retrying in 5 seconds... (%d/%d)", i+1, maxRetries)
+        time.Sleep(5 * time.Second)
+
 	}
 
+
 	return db, nil
+}
+
+
+func runMigration(db *sql.DB) error {
+	driver, err := postgres.WithInstance(db, &postgres.Config{})
+	if err != nil {
+		return err
+	}
+
+	m, err := migrate.NewWithDatabaseInstance("file://./migrations", "postgres", driver)
+	if err != nil {
+		return err
+	}
+
+	err = m.Up()
+	if err != nil && err != migrate.ErrNoChange {
+		return err
+	}
+
+	return nil
 }
