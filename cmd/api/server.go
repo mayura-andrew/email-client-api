@@ -5,36 +5,34 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
-	"os/signal"
-	"syscall"
 	"time"
 )
 
-func (app *application) serve() error {
+// serve runs the HTTP server until ctx is cancelled, then drains in-flight requests.
+func (app *application) serve(ctx context.Context) error {
 	srv := &http.Server{
-		Addr:         fmt.Sprintf(":%d", app.config.port),
-		Handler:      app.routes(),
-		IdleTimeout:  time.Minute,
-		WriteTimeout: 30 * time.Second,
-		ReadTimeout:  10 * time.Second,
+		Addr:              fmt.Sprintf(":%d", app.config.port),
+		Handler:           app.routes(),
+		IdleTimeout:       time.Minute,
+		ReadHeaderTimeout: 5 * time.Second,
+		// CSV and template uploads need more than a few seconds on slow links.
+		ReadTimeout:  60 * time.Second,
+		WriteTimeout: 60 * time.Second,
 	}
 
-	shutdownError := make(chan error)
+	shutdownError := make(chan error, 1)
 
 	go func() {
-		quit := make(chan os.Signal, 1)
-		signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-		s := <-quit
+		<-ctx.Done()
 
 		app.logger.PrintInfo("shutting down server", map[string]string{
-			"signal": s.String(),
+			"addr": srv.Addr,
 		})
 
-		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
 
-		shutdownError <- srv.Shutdown(ctx)
+		shutdownError <- srv.Shutdown(shutdownCtx)
 	}()
 
 	app.logger.PrintInfo("starting server", map[string]string{

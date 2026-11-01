@@ -1,59 +1,26 @@
-# Stage 1: Builder Stage
 FROM golang:1.22 AS builder
 
-# Set the working directory inside the container
 WORKDIR /app
 
-# Copy the Go modules manifests
 COPY go.mod go.sum ./
-
-# Download Go modules
 RUN go mod download
 
-# Copy the source code
 COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -o /email-api ./cmd/api
 
-# Build the Go application with CGO disabled and list files for debugging
-RUN CGO_ENABLED=0 GOOS=linux go build -o app ./cmd/api && ls -l /app
+FROM alpine:3.20
 
-# Stage 2: Final Image
-FROM alpine:latest
+WORKDIR /app
 
-# Set the working directory inside the container
-WORKDIR /root/
+RUN adduser -D -H appuser
+COPY --from=builder /email-api ./email-api
+COPY migrations ./migrations
+COPY assests ./assests
 
-# Copy the binary from the builder stage
-COPY --from=builder /app/app .
+# The application loads .env at startup; Compose supplies the actual values.
+RUN touch .env && chown -R appuser:appuser /app
 
-# Ensure the binary is executable
-RUN chmod +x ./app
-
-# Copy the .env file
-COPY .env .
-
-# List files in the final image for debugging
-RUN ls -l /root
-
-# Copy the migration files
-COPY ./migrations ./migrations
-
-# Copy the email template file
-COPY ./internal/mailer/email_template.tmpl ./internal/mailer/email_template.tmpl
-
-# Install necessary tools
-RUN apk add --no-cache bash
-
-# Expose the application port
+USER appuser
 EXPOSE 4000
 
-# Set environment variables
-ENV DB_DSN=postgres://username:password@db:5432/emailclient?sslmode=disable \
-    SMTPPORT= \
-    SMTPSENDER= \
-    SMTPHOST= \
-    SMTPUSERNAME= \
-    SMTPPASS= \
-    URL=
-
-# Command to run the application
-CMD ["./app"]
+CMD ["./email-api"]

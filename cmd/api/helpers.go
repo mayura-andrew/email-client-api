@@ -8,6 +8,9 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+
+	"github.com/julienschmidt/httprouter"
+	"github.com/mayura-andrew/email-client/internal/data"
 )
 
 type envelop map[string]interface{}
@@ -22,8 +25,28 @@ func (app *application) readIDParam(r *http.Request) (int64, error) {
 	return id, nil
 }
 
+func (app *application) readRouteID(r *http.Request) (int64, error) {
+	id, err := strconv.ParseInt(httprouter.ParamsFromContext(r.Context()).ByName("id"), 10, 64)
+	if err != nil || id < 1 {
+		return 0, errors.New("invalid id parameter")
+	}
+	return id, nil
+}
+
+// readPage reads ?page= and ?page_size=; a missing page_size means maxSize.
+func (app *application) readPage(r *http.Request, maxSize int) data.Page {
+	query := r.URL.Query()
+	number, _ := strconv.Atoi(query.Get("page"))
+	size, _ := strconv.Atoi(query.Get("page_size"))
+	return data.Page{Number: number, Size: size, MaxSize: maxSize}
+}
+
+func pageMetadata(page data.Page, total int) envelop {
+	return envelop{"page": max(page.Number, 1), "pageSize": page.Limit(), "total": total}
+}
+
 func (app *application) writeJSON(w http.ResponseWriter, status int, data envelop, headers http.Header) error {
-	
+
 	js, err := json.Marshal(data)
 	if err != nil {
 		return err
@@ -72,7 +95,7 @@ func (app *application) readJSON(w http.ResponseWriter, r *http.Request, dst int
 			return errors.New("body not be empty")
 
 		case strings.HasPrefix(err.Error(), "json: unknown field "):
-			fieldName := strings.TrimPrefix(err.Error(), "jsonL unknown field ")
+			fieldName := strings.TrimPrefix(err.Error(), "json: unknown field ")
 			return fmt.Errorf("body contanins unknown key %s", fieldName)
 
 		case err.Error() == "http: request body too large":

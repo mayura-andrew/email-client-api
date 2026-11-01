@@ -29,6 +29,9 @@ Thumbs.db
 /api/
 /swagger/.envrc
 bin/
+web/node_modules/
+web/.next/
+web/*.tsbuildinfo
 
 .envrc
 /.envrc

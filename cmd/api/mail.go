@@ -2,31 +2,19 @@ package main
 
 import (
 	"errors"
-	"fmt"
-	"log"
 	"net/http"
-	"path"
-	"time"
+	"strings"
 
-	"github.com/go-mail/mail/v2"
+	"github.com/julienschmidt/httprouter"
 	"github.com/mayura-andrew/email-client/internal/data"
-	"github.com/mayura-andrew/email-client/internal/mailer"
+	"github.com/mayura-andrew/email-client/internal/outbox"
 	"github.com/mayura-andrew/email-client/internal/validator"
 )
 
-type Mailer struct {
-	dailer *mail.Dialer
-	sender string
-}
-
-type EmailStatus struct {
-	Sent     bool
-	Opened   bool
-	SentTime time.Time
-}
-
+// sendEmailHandler queues a tracked email for every recipient and returns
+// immediately. Delivery happens in the outbox workers, so request time no
+// longer grows with the recipient count.
 func (app *application) sendEmailHandler(w http.ResponseWriter, r *http.Request) {
-	// Parse the request body
 	var req struct {
 		Sender     string   `json:"sender"`
 		Recipients []string `json:"recipients"`
@@ -40,9 +28,13 @@ func (app *application) sendEmailHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	recipients := make([]string, 0, len(req.Recipients))
+	for _, recipient := range req.Recipients {
+		recipients = append(recipients, strings.ToLower(strings.TrimSpace(recipient)))
+	}
 	email := &data.Email{
 		Sender:     req.Sender,
-		Recipients: req.Recipients,
+		Recipients: recipients,
 		Subject:    req.Subject,
 		Body:       req.Body,
 	}
@@ -54,65 +46,54 @@ func (app *application) sendEmailHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	emailStatus, err := mailer.NewMail(app.models.Emails, app.config.smtp.host, app.config.smtp.port, app.config.smtp.username, app.config.smtp.password, app.config.smtp.sender, req.Subject, req.Recipients, req.Body)
+	ids, err := app.models.Emails.Queue(r.Context(), email, app.config.delivery.maxAttempts)
 	if err != nil {
-		http.Error(w, "Failed to send email", http.StatusInternalServerError)
+		app.serverErrorRespone(w, r, err)
 		return
 	}
+	outbox.Notify(r.Context(), app.redis)
 
 	headers := make(http.Header)
-	headers.Set("Location", fmt.Sprintf("/api/v1/emails/%d", email.ID))
+	headers.Set("Location", "/api/v1/sent")
 
-	err = app.writeJSON(w, http.StatusCreated, envelop{"status": emailStatus}, headers)
+	err = app.writeJSON(w, http.StatusAccepted, envelop{"status": "queued", "emailId": email.ID, "recipientIds": ids}, headers)
 	if err != nil {
 		app.serverErrorRespone(w, r, err)
 	}
 }
 
+// transparentGIF is a 1x1 tracking pixel.
+var transparentGIF = []byte("GIF89a\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00\x00\x00\x00!\xf9\x04\x01\x00\x00\x00\x00,\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;")
+
+// track records an open (pixel load or link click). It redirects to
+// TRACKING_REDIRECT_URL when one is configured, otherwise it returns a pixel.
 func (app *application) track(w http.ResponseWriter, r *http.Request) {
-	id, err := app.readIDParam(r)
-	fmt.Println(id)
-	if err != nil {
-		app.writeJSON(w, http.StatusBadRequest, envelop{"status": map[string]string{"error": "Missing id parameter"}}, nil)
+	if id, err := app.readIDParam(r); err == nil {
+		if err := app.models.Emails.MarkOpened(r.Context(), id); err != nil && !errors.Is(err, data.ErrRecordNotFound) {
+			app.logError(r, err)
+		}
+	}
+	if app.config.trackingRedirectURL != "" {
+		http.Redirect(w, r, app.config.trackingRedirectURL, http.StatusFound)
 		return
 	}
-	
-	log.Printf("Email opened: %d", id)
-	
-	err = mailer.UpdateEmailTracking(app.models.Emails, id)
-	if err != nil {
-		log.Printf("Failed to update email tracking: %v", err)
-		app.writeJSON(w, http.StatusBadRequest, envelop{"status": map[string]string{"error": "Internal server error"}}, nil)
-	}
-	redirectURL := "https://scholarx.sefglobal.org"
-	http.Redirect(w, r, redirectURL, http.StatusFound)
+	w.Header().Set("Content-Type", "image/gif")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(transparentGIF)
 }
 
-func (app *application) showEmailHandler(w http.ResponseWriter, r *http.Request) {
+// listSentHandler lists delivery records, optionally filtered by the :email route parameter.
+func (app *application) listSentHandler(w http.ResponseWriter, r *http.Request) {
+	recipient := strings.ToLower(httprouter.ParamsFromContext(r.Context()).ByName("email"))
+	page := app.readPage(r, 100)
 
-	recipient := path.Base(r.URL.Path)
-	if recipient == "" {
-		app.notFoundResponse(w, r)
-		return
-	} 
-
-	emails, err := app.models.Emails.GetAllSent()
+	emails, total, err := app.models.Emails.List(r.Context(), recipient, page)
 	if err != nil {
-		switch {
-		case errors.Is(err, data.ErrRecordNotFound):
-			app.notFoundResponse(w, r)
-		default:
-			app.serverErrorRespone(w, r, err)
-		}
+		app.serverErrorRespone(w, r, err)
 		return
 	}
 
-	if len(*emails) == 0 {
-		app.writeJSON(w, http.StatusOK, envelop{"emails": []string{}}, nil)		
-		return
-	}
-
-	err = app.writeJSON(w, http.StatusOK, envelop{"emails": emails}, nil)
+	err = app.writeJSON(w, http.StatusOK, envelop{"emails": emails, "metadata": pageMetadata(page, total)}, nil)
 	if err != nil {
 		app.serverErrorRespone(w, r, err)
 	}

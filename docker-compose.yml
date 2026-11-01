@@ -1,8 +1,6 @@
-version: '3.8'
-
 services:
   db:
-    image: postgres:13
+    image: postgres:16-alpine
     environment:
       POSTGRES_USER: user
       POSTGRES_PASSWORD: password
@@ -11,12 +9,35 @@ services:
       - db_data:/var/lib/postgresql/data
     ports:
       - "5434:5432"
-
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U user"]
+      test: ["CMD-SHELL", "pg_isready -U user -d emailclient"]
       interval: 10s
       timeout: 5s
       retries: 5
+
+  redis:
+    image: redis:7.4-alpine
+    # AOF keeps rate-limit, quota and session state across restarts; the outbox
+    # itself is recoverable from PostgreSQL even if Redis data is lost.
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Local SMTP catcher for development: UI on http://localhost:8025.
+  # Start it with: docker compose --profile dev up
+  mailpit:
+    image: axllent/mailpit:v1.21
+    profiles: ["dev"]
+    ports:
+      - "8025:8025"
+      - "1025:1025"
 
   api:
     build:
@@ -24,17 +45,58 @@ services:
       dockerfile: Dockerfile
     environment:
       DB_DSN: postgres://user:password@db:5432/emailclient?sslmode=disable
-      SMTPPORT: ${SMTPPORT}
+      REDIS_URL: redis://redis:6379/0
+      SMTPPORT: ${SMTPPORT:-587}
       SMTPSENDER: ${SMTPSENDER}
       SMTPHOST: ${SMTPHOST}
       SMTPUSERNAME: ${SMTPUSERNAME}
       SMTPPASS: ${SMTPPASS}
       URL: ${URL}
+      TRACKING_REDIRECT_URL: ${TRACKING_REDIRECT_URL:-}
+      CORS_TRUSTED_ORIGINS: ${CORS_TRUSTED_ORIGINS:-http://localhost:3000 http://localhost:5173}
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      ADMIN_SESSION_SECRET: ${ADMIN_SESSION_SECRET}
+      CERTIFICATE_TEMPLATE: ${CERTIFICATE_TEMPLATE:-./assests/template.jpg}
+      CERTIFICATE_NAME_X: ${CERTIFICATE_NAME_X:-0}
+      CERTIFICATE_NAME_Y: ${CERTIFICATE_NAME_Y:-60}
+      CERTIFICATE_NAME_SIZE: ${CERTIFICATE_NAME_SIZE:-24}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-4}
+      SMTP_RATE_PER_SECOND: ${SMTP_RATE_PER_SECOND:-2}
+      SMTP_DAILY_LIMIT: ${SMTP_DAILY_LIMIT:-0}
+      OUTBOX_MAX_ATTEMPTS: ${OUTBOX_MAX_ATTEMPTS:-5}
     ports:
       - "4000:4000"
+    volumes:
+      - ./assests:/app/assests
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:4000/api/v1/healthcheck"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    # Workers finish in-flight sends on SIGTERM; give them the outbox lease.
+    stop_grace_period: 2m30s
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:4000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+    restart: unless-stopped
 
 volumes:
   db_data:
+  redis_data:

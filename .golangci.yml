@@ -1,0 +1,19 @@
+version: "2"
+
+linters:
+  settings:
+    errcheck:
+      # Cleanup in defer and writes to an already-started HTTP response have no
+      # useful recovery path; every other unchecked error is still reported.
+      exclude-functions:
+        - (io.Closer).Close
+        - (*database/sql.DB).Close
+        - (*database/sql.Rows).Close
+        - (*database/sql.Tx).Rollback
+        - (*github.com/redis/go-redis/v9.baseClient).Close
+        - (*github.com/redis/go-redis/v9.PubSub).Close
+        - (*github.com/mayura-andrew/email-client/internal/mailer.Conn).Close
+        - (github.com/mayura-andrew/email-client/internal/outbox.Processor).Close
+        - (net/http.ResponseWriter).Write
+        - fmt.Fprint
+        - (*github.com/mayura-andrew/email-client/internal/jsonlog.Logger).print

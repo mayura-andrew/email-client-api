@@ -36,13 +36,13 @@ func (app *application) rootHandler(w http.ResponseWriter, r *http.Request) {
 		<div class="container">
 			<h1>Welcome to Our API!</h1>
 			<h2>API Endpoints</h2>
-			<p><strong>GET /api/v1/healthcheck:</strong> Check the health of the application.</p>
-			<p><strong>GET /debug/vars:</strong> Get debug variables.</p>
-			<p><strong>GET /:</strong> Root endpoint.</p>
-			<p><strong>POST /api/v1/send:</strong> Send an email.</p>
-			<p><strong>GET /api/v1/track:</strong> Track an email.</p>
-			<p><strong>GET /api/v1/sent:</strong> Retrieve all sent emails.</p>
-			<p><strong>GET /api/v1/recipients/:email:</strong> Get information about a specific email recipient.</p>
+			<p><strong>GET /api/v1/healthcheck:</strong> Health of the API, PostgreSQL and Redis.</p>
+			<p><strong>POST /api/v1/auth/login, /api/v1/auth/logout:</strong> Admin session.</p>
+			<p><strong>POST /api/v1/send:</strong> Queue a tracked email (admin).</p>
+			<p><strong>GET /api/v1/sent, /api/v1/recipients/:email:</strong> Delivery history (admin, paginated).</p>
+			<p><strong>/api/v1/campaigns/...:</strong> Certificate campaigns (admin).</p>
+			<p><strong>GET /api/v1/redirect?id=:</strong> Open tracking.</p>
+			<p><strong>GET /debug/vars:</strong> Runtime and outbox metrics (admin).</p>
 		</div>
 	</body>
 	</html>

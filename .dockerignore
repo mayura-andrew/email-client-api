@@ -1,0 +1,8 @@
+.git
+.env
+.envrc
+bin
+tmp
+*.log
+web/node_modules
+web/.next
