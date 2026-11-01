@@ -18,10 +18,12 @@ const statusMeta: Record<RowStatus, { label: string; icon: IconName }> = {
   invalid: { label: "Invalid", icon: "x" },
 };
 
-export function AudiencePreview({ audience, onMapping, onFix }: {
+export function AudiencePreview({ audience, onMapping, onFix, showMapping = true, onRemove }: {
   audience: Audience;
   onMapping: (mapping: Mapping) => void;
   onFix: (fixes: Record<number, string>) => void;
+  showMapping?: boolean;
+  onRemove?: (manualId: number) => void;
 }) {
   const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState("");
@@ -44,7 +46,7 @@ export function AudiencePreview({ audience, onMapping, onFix }: {
 
   return (
     <div className="audience">
-      <section className="panel">
+      {showMapping && <section className="panel">
         <div className="panel-head">
           <div>
             <h2>Columns</h2>
@@ -63,7 +65,7 @@ export function AudiencePreview({ audience, onMapping, onFix }: {
             ))}
           </div>
         </div>
-      </section>
+      </section>}
 
       {audience.error ? (
         <div className="banner banner-error"><Icon name="alert" size={18} /><div><strong>Can&apos;t read recipients yet.</strong> {audience.error}</div></div>
@@ -103,7 +105,7 @@ export function AudiencePreview({ audience, onMapping, onFix }: {
               </label>
             </div>
           </div>
-          <RowsTable headers={headers} mapping={mapping} rows={rows} onFix={(line, email) => onFix({ [line]: email })} />
+          <RowsTable headers={headers} mapping={mapping} rows={rows} onFix={(line, email) => onFix({ [line]: email })} onRemove={onRemove} />
           <div className="table-foot muted small">
             Showing {formatNumber(rows.length)} of {formatNumber(audience.rows.length)} rows · only “Ready” rows are imported
           </div>
@@ -156,7 +158,9 @@ function DuplicateGroups({ groups }: { groups: Audience["duplicates"] }) {
 }
 
 /** Windowed table: only rows in view are rendered, so 50,000-row files stay smooth. */
-function RowsTable({ headers, mapping, rows, onFix }: { headers: string[]; mapping: Mapping; rows: AudienceRow[]; onFix: (line: number, email: string) => void }) {
+function RowsTable({ headers, mapping, rows, onFix, onRemove }: {
+  headers: string[]; mapping: Mapping; rows: AudienceRow[]; onFix: (line: number, email: string) => void; onRemove?: (manualId: number) => void;
+}) {
   const [scrollTop, setScrollTop] = useState(0);
   const box = useRef<HTMLDivElement>(null);
   const start = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
@@ -185,7 +189,13 @@ function RowsTable({ headers, mapping, rows, onFix }: { headers: string[]; mappi
           {start > 0 && <tr style={{ height: start * ROW_HEIGHT }}><td colSpan={columns} /></tr>}
           {rows.slice(start, end).map(row => (
             <tr key={row.line} className={`row-${row.status}`} style={{ height: ROW_HEIGHT }}>
-              <td className="col-line tabular">{row.line}</td>
+              <td className="col-line tabular">
+                {row.manualId !== undefined ? (
+                  <span className="manual-tag">Added
+                    {onRemove && <button aria-label={`Remove ${row.name || row.email}`} onClick={() => onRemove(row.manualId!)}><Icon name="x" size={11} /></button>}
+                  </span>
+                ) : row.line}
+              </td>
               <td className="col-status"><span className={`row-badge row-badge-${row.status}`}><Icon name={statusMeta[row.status].icon} size={11} />{statusMeta[row.status].label}</span></td>
               <td className="col-issue">
                 {row.message ? <span className={`issue issue-${row.status}`}>{row.message}</span> : <span className="muted">—</span>}

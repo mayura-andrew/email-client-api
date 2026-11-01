@@ -159,6 +159,49 @@ func (app *application) uploadCampaignCSVHandler(w http.ResponseWriter, r *http.
 	}, nil)
 }
 
+// addRecipientHandler adds one recipient by hand, e.g. a student missing from the CSV.
+func (app *application) addRecipientHandler(w http.ResponseWriter, r *http.Request) {
+	campaignID, err := app.readRouteID(r)
+	if err != nil {
+		app.badRequestResponse(w, r, err)
+		return
+	}
+	var request struct {
+		StudentName string `json:"studentName"`
+		Email       string `json:"email"`
+	}
+	if err := app.readJSON(w, r, &request); err != nil {
+		app.badRequestResponse(w, r, err)
+		return
+	}
+	name := strings.TrimSpace(request.StudentName)
+	email := strings.ToLower(strings.TrimSpace(request.Email))
+	if name == "" {
+		app.failedValidationResponse(w, r, map[string]string{"studentName": "Student name is empty"})
+		return
+	}
+	if problem := validator.EmailProblem(email); problem != "" {
+		app.failedValidationResponse(w, r, map[string]string{"email": problem})
+		return
+	}
+	recipient, queued, err := app.models.Campaigns.AddRecipient(r.Context(), campaignID, name, email, app.config.delivery.maxAttempts)
+	switch {
+	case errors.Is(err, data.ErrRecordNotFound):
+		app.notFoundResponse(w, r)
+		return
+	case errors.Is(err, data.ErrDuplicateRecipient):
+		app.errorResponse(w, r, http.StatusConflict, "This email is already in this campaign.")
+		return
+	case err != nil:
+		app.serverErrorRespone(w, r, err)
+		return
+	}
+	if queued {
+		outbox.Notify(r.Context(), app.redis)
+	}
+	_ = app.writeJSON(w, http.StatusCreated, envelop{"recipient": recipient, "queued": queued}, nil)
+}
+
 func (app *application) startCampaignHandler(w http.ResponseWriter, r *http.Request) {
 	campaignID, err := app.readRouteID(r)
 	if err != nil {

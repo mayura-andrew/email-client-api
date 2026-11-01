@@ -10,7 +10,10 @@ import (
 	"github.com/mayura-andrew/email-client/internal/outbox"
 )
 
-var ErrCampaignNotDraft = errors.New("campaign is no longer a draft")
+var (
+	ErrCampaignNotDraft   = errors.New("campaign is no longer a draft")
+	ErrDuplicateRecipient = errors.New("this email is already in the campaign")
+)
 
 type Campaign struct {
 	ID          int64      `json:"id"`
@@ -133,6 +136,55 @@ func (m CampaignModel) List(ctx context.Context, page Page) ([]Campaign, int, er
 
 // ImportRecipients inserts a validated CSV in one statement and one transaction:
 // either every row lands or none do. Emails already in the campaign are skipped.
+// AddRecipient adds one person to a campaign in any state. Draft and paused
+// campaigns keep them as "valid" for the next Start; a running or completed
+// campaign queues them straight into the outbox in the same transaction (and a
+// completed campaign goes back to running until they are delivered).
+func (m CampaignModel) AddRecipient(ctx context.Context, campaignID int64, name, email string, maxAttempts int) (CampaignRecipient, bool, error) {
+	tx, err := m.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return CampaignRecipient{}, false, err
+	}
+	defer tx.Rollback()
+
+	var status string
+	err = tx.QueryRowContext(ctx, `SELECT status FROM campaigns WHERE id = $1 FOR UPDATE`, campaignID).Scan(&status)
+	if errors.Is(err, sql.ErrNoRows) {
+		return CampaignRecipient{}, false, ErrRecordNotFound
+	}
+	if err != nil {
+		return CampaignRecipient{}, false, err
+	}
+	queue := status == "running" || status == "completed"
+	r := CampaignRecipient{CampaignID: campaignID, StudentName: name, Email: email, Status: "valid"}
+	if queue {
+		r.Status = "queued"
+	}
+	err = tx.QueryRowContext(ctx, `INSERT INTO campaign_recipients (campaign_id, student_name, email, status)
+		VALUES ($1, $2, $3, $4) ON CONFLICT (campaign_id, email) DO NOTHING RETURNING id`,
+		campaignID, name, email, r.Status).Scan(&r.ID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return CampaignRecipient{}, false, ErrDuplicateRecipient
+	}
+	if err != nil {
+		return CampaignRecipient{}, false, err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE campaigns SET total_count = total_count + 1,
+		valid_count = valid_count + 1 WHERE id = $1`, campaignID); err != nil {
+		return CampaignRecipient{}, false, err
+	}
+	if queue {
+		if err := outbox.EnqueueTx(ctx, tx, outbox.TopicCertificateEmail, sql.NullInt64{Int64: campaignID, Valid: true}, []int64{r.ID}, maxAttempts); err != nil {
+			return CampaignRecipient{}, false, err
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE campaigns SET status = 'running', completed_at = NULL
+			WHERE id = $1 AND status = 'completed'`, campaignID); err != nil {
+			return CampaignRecipient{}, false, err
+		}
+	}
+	return r, queue, tx.Commit()
+}
+
 func (m CampaignModel) ImportRecipients(ctx context.Context, campaignID int64, names, emails []string, totalRows int) (ImportResult, error) {
 	tx, err := m.DB.BeginTx(ctx, nil)
 	if err != nil {

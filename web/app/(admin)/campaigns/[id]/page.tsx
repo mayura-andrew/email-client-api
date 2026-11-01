@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useDelivery } from "@/components/DeliveryContext";
 import { Icon } from "@/components/Icon";
+import { RecipientForm } from "@/components/RecipientForm";
 import { useToast } from "@/components/Toast";
 import { AnimatedNumber, Button, EmptyState, Modal, SegmentedProgress, Skeleton, StatusBadge } from "@/components/ui";
 import { api, Campaign, PageMeta, Recipient } from "@/lib/api";
@@ -47,6 +48,15 @@ export default function CampaignPage() {
 
   const [busy, setBusy] = useState<"" | "start" | "retry">("");
   const [confirmStart, setConfirmStart] = useState(false);
+  const [adding, setAdding] = useState(false);
+
+  async function addRecipient(studentName: string, email: string) {
+    const result = await api<{ queued: boolean }>(`/api/v1/campaigns/${id}/recipients`, { method: "POST", body: JSON.stringify({ studentName, email }) });
+    toast("success", `${studentName} added`, result.queued ? "Their certificate is queued and will be sent shortly." : "They will be included when the campaign starts.");
+    setAdding(false);
+    if (result.queued) setLive(true);
+    await Promise.all([campaign.refresh(), recipients.refresh()]);
+  }
 
   async function start() {
     setBusy("start");
@@ -94,6 +104,7 @@ export default function CampaignPage() {
           </> : <><Skeleton width={320} height={40} /><Skeleton width={220} /></>}
         </div>
         <div className="header-actions">
+          {c && <Button variant="secondary" icon="plus" onClick={() => setAdding(true)}>Add recipient</Button>}
           {c && c.failedCount > 0 && <Button variant="secondary" icon="refresh" loading={busy === "retry"} onClick={retry}>Retry {c.failedCount} failed</Button>}
           {c && (c.status === "draft" || c.status === "paused") && c.validCount > 0 &&
             <Button icon="send" onClick={() => setConfirmStart(true)}>{c.status === "draft" ? "Start sending" : "Resume"}</Button>}
@@ -178,6 +189,19 @@ export default function CampaignPage() {
           </div>
         </details>
       )}
+
+      <Modal open={adding} onClose={() => setAdding(false)} width={560}>
+        <div className="modal-body">
+          <div className="modal-icon"><Icon name="users" size={22} /></div>
+          <h2>Add a recipient</h2>
+          <p className="muted">
+            {c?.status === "running" || c?.status === "completed"
+              ? "For someone who was missed. Their certificate is generated and sent right away, with the same retries as everyone else."
+              : `They will be included when you ${c?.status === "paused" ? "resume" : "start"} this campaign.`}
+          </p>
+          <RecipientForm existing={new Set()} autoFocus submitLabel="Add recipient" onAdd={addRecipient} />
+        </div>
+      </Modal>
 
       <Modal open={confirmStart} onClose={() => setConfirmStart(false)}>
         <div className="modal-body">

@@ -7,9 +7,14 @@ import { Icon } from "@/components/Icon";
 import { Button, Dropzone, Modal, Skeleton, Spinner } from "@/components/ui";
 import { api, json } from "@/lib/api";
 import { AudiencePreview } from "@/components/AudiencePreview";
-import { analyzeAudience, Audience, detectMapping, Mapping, parseCSV, toUploadCSV } from "@/lib/csv";
+import { RecipientForm } from "@/components/RecipientForm";
+import { analyzeAudience, Audience, detectMapping, emailProblem, ManualEntry, Mapping, parseCSV, parsePastedList, toUploadCSV } from "@/lib/csv";
 import { etaSeconds } from "@/lib/eta";
 import { formatDuration, formatNumber, initials, personalize } from "@/lib/format";
+
+// Columns used when there is no CSV and every student was added by hand.
+const MANUAL_TABLE = [["Student name", "Email"]];
+const MANUAL_MAPPING: Mapping = { name: 0, email: 1 };
 
 const STEPS = ["Audience", "Message", "Certificate", "Review & send"] as const;
 const DEFAULT_BODY = "Hello {{student_name}},\n\nCongratulations on completing the program! Your certificate is attached to this email.\n\nWarm regards,\nThe AI4ALL Team";
@@ -25,7 +30,13 @@ export default function NewCampaignPage() {
   const [mapping, setMapping] = useState<Mapping>({ name: -1, email: -1 });
   // Email corrections the admin accepted, keyed by file line number.
   const [fixes, setFixes] = useState<Record<number, string>>({});
-  const audience = useMemo(() => table ? analyzeAudience(table, mapping, fixes) : null, [table, mapping, fixes]);
+  // Students typed or pasted in by hand, with or without a CSV.
+  const [manual, setManual] = useState<ManualEntry[]>([]);
+  const nextManualId = useRef(1);
+  const audience = useMemo(() => {
+    if (!table && manual.length === 0) return null;
+    return analyzeAudience(table ?? MANUAL_TABLE, table ? mapping : MANUAL_MAPPING, fixes, manual);
+  }, [table, mapping, fixes, manual]);
   const [form, setForm] = useState({ name: "", subject: "Your certificate from AI4ALL", body: DEFAULT_BODY });
   const [sample, setSample] = useState(0);
   const [launch, setLaunch] = useState<LaunchStep[] | null>(null);
@@ -37,10 +48,18 @@ export default function NewCampaignPage() {
 
   // Leaving with an imported audience would silently lose the work.
   useEffect(() => {
-    const warn = (event: BeforeUnloadEvent) => { if (file && !sent.current) event.preventDefault(); };
+    const warn = (event: BeforeUnloadEvent) => { if ((file || manual.length) && !sent.current) event.preventDefault(); };
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
-  }, [file]);
+  }, [file, manual.length]);
+
+  function addManual(entries: { name: string; email: string }[]) {
+    setManual(current => [...current, ...entries.map(entry => ({ ...entry, id: nextManualId.current++ }))]);
+  }
+
+  function removeFile() {
+    setFile(null); setTable(null); setFixes({}); setSample(0);
+  }
 
   async function onFile(next: File) {
     setFile(next);
@@ -53,7 +72,7 @@ export default function NewCampaignPage() {
   }
 
   async function send() {
-    if (!file) return;
+    if (!valid.length) return;
     const steps: LaunchStep[] = [
       { label: "Creating campaign", state: "active" },
       { label: `Importing ${formatNumber(valid.length)} recipients`, state: "waiting" },
@@ -114,7 +133,8 @@ export default function NewCampaignPage() {
       </ol>
 
       <div className="wizard-body" key={step}>
-        {step === 0 && <AudienceStep file={file} audience={audience} onFile={onFile}
+        {step === 0 && <AudienceStep file={file} audience={audience} onFile={onFile} onRemoveFile={removeFile}
+          manualCount={manual.length} onAdd={addManual} onRemove={id => setManual(current => current.filter(entry => entry.id !== id))}
           onMapping={next => { setMapping(next); setFixes({}); /* fixes belong to the previous email column */ }}
           onFix={next => setFixes(current => ({ ...current, ...next }))} />}
         {step === 1 && <MessageStep form={form} setForm={setForm} recipient={recipient} sample={sample} setSample={setSample} count={valid.length} />}
@@ -151,29 +171,85 @@ export default function NewCampaignPage() {
   );
 }
 
-function AudienceStep({ file, audience, onFile, onMapping, onFix }: {
-  file: File | null; audience: Audience | null; onFile: (file: File) => void;
+function AudienceStep({ file, audience, onFile, onRemoveFile, onMapping, onFix, manualCount, onAdd, onRemove }: {
+  file: File | null; audience: Audience | null; onFile: (file: File) => void; onRemoveFile: () => void;
   onMapping: (mapping: Mapping) => void; onFix: (fixes: Record<number, string>) => void;
+  manualCount: number; onAdd: (entries: { name: string; email: string }[]) => void; onRemove: (id: number) => void;
 }) {
-  if (!file || !audience) {
+  const existing = useMemo(() => new Set(audience?.rows.map(row => row.email).filter(Boolean)), [audience]);
+  if (!audience) {
     return (
-      <section className="panel">
-        <Dropzone accept=".csv,text/csv" onFile={onFile}>
-          <div className="dropzone-icon"><Icon name="upload" size={26} /></div>
-          <strong>Drop your CSV here, or click to browse</strong>
-          <span>Needs a name column and an email column, in any order. Every row is checked in your browser before anything is sent.</span>
-        </Dropzone>
-      </section>
+      <div className="audience-start">
+        <section className="panel">
+          <div className="option-head"><span className="option-icon"><Icon name="upload" size={18} /></span><div><h2>Upload a CSV</h2><p className="muted small">Best for a whole cohort.</p></div></div>
+          <Dropzone accept=".csv,text/csv" onFile={onFile}>
+            <div className="dropzone-icon"><Icon name="file" size={24} /></div>
+            <strong>Drop your CSV here, or click to browse</strong>
+            <span>Needs a name column and an email column, in any order.</span>
+          </Dropzone>
+        </section>
+        <section className="panel">
+          <div className="option-head"><span className="option-icon"><Icon name="users" size={18} /></span><div><h2>Add students by hand</h2><p className="muted small">For a few people, or anyone missing from a file.</p></div></div>
+          <ManualEntryPanel existing={existing} onAdd={onAdd} autoFocus={false} />
+        </section>
+      </div>
     );
   }
   return (
     <div className="audience">
       <section className="panel file-card">
-        <div className="file-chip"><Icon name="file" size={20} /><div><strong>{file.name}</strong>
-          <span>{(file.size / 1024).toFixed(1)} KB · {formatNumber(audience.rows.length)} rows · {audience.headers.length} columns</span></div></div>
-        <Dropzone accept=".csv,text/csv" onFile={onFile} compact><Icon name="refresh" size={14} /> Replace file</Dropzone>
+        {file ? <>
+          <div className="file-chip"><Icon name="file" size={20} /><div><strong>{file.name}</strong>
+            <span>{(file.size / 1024).toFixed(1)} KB · {formatNumber(audience.rows.length - manualCount)} rows · {audience.headers.length} columns
+              {manualCount > 0 && <> · <strong className="text-brand">+{manualCount} added by hand</strong></>}</span></div></div>
+          <div className="file-actions">
+            <button className="btn btn-ghost" onClick={onRemoveFile}><Icon name="x" size={14} /><span>Remove file</span></button>
+            <Dropzone accept=".csv,text/csv" onFile={onFile} compact><Icon name="refresh" size={14} /> Replace file</Dropzone>
+          </div>
+        </> : <>
+          <div className="file-chip"><Icon name="users" size={20} /><div><strong>Students added by hand</strong>
+            <span>{formatNumber(manualCount)} {manualCount === 1 ? "person" : "people"} · you can still add a CSV</span></div></div>
+          <Dropzone accept=".csv,text/csv" onFile={onFile} compact><Icon name="upload" size={14} /> Add a CSV</Dropzone>
+        </>}
       </section>
-      <AudiencePreview audience={audience} onMapping={onMapping} onFix={onFix} />
+      <details className="panel manual-panel" open={!file}>
+        <summary><Icon name="plus" size={16} /> Add students by hand {manualCount > 0 && <span className="count">{manualCount}</span>}
+          <span className="muted small">Checked against the list above for duplicates</span></summary>
+        <ManualEntryPanel existing={existing} onAdd={onAdd} autoFocus />
+      </details>
+      <AudiencePreview audience={audience} onMapping={onMapping} onFix={onFix} showMapping={!!file} onRemove={onRemove} />
+    </div>
+  );
+}
+
+/** Single entry form plus a "paste a list" mode for several people at once. */
+function ManualEntryPanel({ existing, onAdd, autoFocus }: { existing: Set<string>; onAdd: (entries: { name: string; email: string }[]) => void; autoFocus: boolean }) {
+  const [mode, setMode] = useState<"one" | "paste">("one");
+  const [pasted, setPasted] = useState("");
+  const parsed = useMemo(() => parsePastedList(pasted), [pasted]);
+  const problems = parsed.filter(entry => !entry.name || emailProblem(entry.email)).length;
+  return (
+    <div className="manual-entry">
+      <div className="segmented-control">
+        <button type="button" className={mode === "one" ? "is-active" : ""} onClick={() => setMode("one")}>One at a time</button>
+        <button type="button" className={mode === "paste" ? "is-active" : ""} onClick={() => setMode("paste")}>Paste a list</button>
+      </div>
+      {mode === "one" ? (
+        <RecipientForm existing={existing} autoFocus={autoFocus} onAdd={(name, email) => onAdd([{ name, email }])} />
+      ) : (
+        <div className="paste-list">
+          <textarea rows={6} value={pasted} onChange={e => setPasted(e.target.value)}
+            placeholder={"One person per line, for example:\nAda Lovelace, ada@example.org\nGrace Hopper <grace@example.org>\nalan@example.org, Alan Turing"} />
+          <div className="paste-actions">
+            <span className="muted small">
+              {parsed.length ? <>{parsed.length} {parsed.length === 1 ? "person" : "people"} found{problems ? <> · <span className="text-red">{problems} with problems</span> (shown in the list after adding)</> : ""}</> : "Copy rows from a spreadsheet or an email"}
+            </span>
+            <Button type="button" icon="plus" disabled={!parsed.length} onClick={() => { onAdd(parsed); setPasted(""); }}>
+              Add {parsed.length || ""} {parsed.length === 1 ? "person" : "people"}
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

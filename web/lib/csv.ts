@@ -115,8 +115,11 @@ export function detectMapping(headers: string[]): Mapping {
 
 export type RowStatus = "valid" | "warning" | "invalid" | "duplicate";
 
+export type ManualEntry = { id: number; name: string; email: string };
+
 export type AudienceRow = {
-  line: number; // line number in the file, header = 1
+  line: number; // line number in the file (header = 1); manual entries continue after the file
+  manualId?: number; // set for students added by hand
   cells: string[];
   name: string;
   email: string;
@@ -138,7 +141,11 @@ export type Audience = {
   error?: string;
 };
 
-export function analyzeAudience(table: string[][], mapping: Mapping, overrides: Record<number, string> = {}): Audience {
+/**
+ * Validates file rows and hand-added students together, so duplicates are
+ * caught across both and the preview shows one consistent list.
+ */
+export function analyzeAudience(table: string[][], mapping: Mapping, overrides: Record<number, string> = {}, manual: ManualEntry[] = []): Audience {
   const headers = table[0] ?? [];
   const empty: Audience = { headers, mapping, rows: [], valid: [], duplicates: [], counts: { valid: 0, warning: 0, invalid: 0, duplicate: 0 } };
   if (table.length === 0) return { ...empty, error: "The file is empty." };
@@ -147,11 +154,19 @@ export function analyzeAudience(table: string[][], mapping: Mapping, overrides: 
 
   const firstSeen = new Map<string, AudienceRow>();
   const groups = new Map<string, DuplicateGroup>();
-  const rows: AudienceRow[] = table.slice(1).map((cells, index) => {
+  const width = Math.max(table[0]?.length ?? 0, mapping.name + 1, mapping.email + 1);
+  const manualRows = manual.map(entry => {
+    const cells = Array<string>(width).fill("");
+    cells[mapping.name] = entry.name;
+    cells[mapping.email] = entry.email;
+    return { cells, manualId: entry.id };
+  });
+  const sources = [...table.slice(1).map(cells => ({ cells, manualId: undefined as number | undefined })), ...manualRows];
+  const rows: AudienceRow[] = sources.map(({ cells, manualId }, index) => {
     const line = index + 2;
     const name = (cells[mapping.name] ?? "").trim();
     const email = (overrides[line] ?? cells[mapping.email] ?? "").trim().toLowerCase();
-    const row: AudienceRow = { line, cells, name, email, status: "valid" };
+    const row: AudienceRow = { line, cells, name, email, status: "valid", manualId };
     const problem = emailProblem(email);
     if (cells.length <= Math.max(mapping.name, mapping.email)) { row.status = "invalid"; row.message = "Row is missing columns"; }
     else if (!name) { row.status = "invalid"; row.message = "Student name is empty"; }
@@ -188,4 +203,20 @@ export function analyzeAudience(table: string[][], mapping: Mapping, overrides: 
 export function toUploadCSV(rows: AudienceRow[]): string {
   const quote = (value: string) => /[",\r\n]/.test(value) ? `"${value.replaceAll('"', '""')}"` : value;
   return ["student_name,email", ...rows.map(row => `${quote(row.name)},${quote(row.email)}`)].join("\n");
+}
+
+/**
+ * Reads a pasted list, one person per line, in the forms people usually copy:
+ * "Name <email>", "Name, email", "email, Name", tab-separated, or just "email".
+ */
+export function parsePastedList(text: string): { name: string; email: string }[] {
+  return text.split(/\r?\n/).map(line => line.trim()).filter(Boolean).map(line => {
+    const angle = line.match(/^(.*?)<([^>]+)>\s*$/);
+    if (angle) return { name: angle[1].replace(/["',;]+/g, " ").trim(), email: angle[2].trim().toLowerCase() };
+    const parts = line.split(/[,;\t]/).map(part => part.trim().replace(/^"|"$/g, "")).filter(Boolean);
+    const emailIndex = parts.findIndex(part => part.includes("@"));
+    if (emailIndex < 0) return { name: parts.join(" "), email: "" };
+    const name = parts.filter((_, i) => i !== emailIndex).join(" ");
+    return { name, email: parts[emailIndex].toLowerCase() };
+  });
 }

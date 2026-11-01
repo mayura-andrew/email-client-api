@@ -445,3 +445,44 @@ func TestDeliveryStatsAndRecipientFilters(t *testing.T) {
 		t.Errorf("case-insensitive search returned %d rows, want 1", total)
 	}
 }
+
+func TestAddRecipientByHand(t *testing.T) {
+	db, _ := setup(t)
+	ctx := context.Background()
+	campaigns := data.CampaignModel{DB: db}
+	id := seedCampaign(t, db, "a@example.com")
+
+	// Running campaign: queued straight into the outbox.
+	r, queued, err := campaigns.AddRecipient(ctx, id, "Late Student", "late@example.com", 3)
+	if err != nil || !queued || r.Status != "queued" {
+		t.Fatalf("running campaign: queued=%v status=%s err=%v", queued, r.Status, err)
+	}
+	var outboxStatus string
+	if err := db.QueryRow(`SELECT status FROM outbox_messages WHERE aggregate_id=$1`, r.ID).Scan(&outboxStatus); err != nil || outboxStatus != "pending" {
+		t.Fatalf("outbox row status=%q err=%v", outboxStatus, err)
+	}
+	if _, _, err := campaigns.AddRecipient(ctx, id, "Again", "late@example.com", 3); !errors.Is(err, data.ErrDuplicateRecipient) {
+		t.Fatalf("duplicate add: err=%v", err)
+	}
+
+	// Completed campaign reopens so the new person is tracked to delivery.
+	if _, err := db.Exec(`UPDATE campaigns SET status='completed', completed_at=NOW() WHERE id=$1`, id); err != nil {
+		t.Fatal(err)
+	}
+	if _, queued, err := campaigns.AddRecipient(ctx, id, "Later Student", "later@example.com", 3); err != nil || !queued {
+		t.Fatalf("completed campaign: queued=%v err=%v", queued, err)
+	}
+	campaign, _ := campaigns.Get(ctx, id)
+	if campaign.Status != "running" || campaign.ValidCount != 3 {
+		t.Fatalf("campaign status=%s valid=%d, want running and 3", campaign.Status, campaign.ValidCount)
+	}
+
+	// Draft campaign: kept for Start, nothing queued yet.
+	draft := &data.Campaign{Name: "d", Subject: "s", Body: "b", Sender: "x@example.com"}
+	if err := campaigns.Create(ctx, draft); err != nil {
+		t.Fatal(err)
+	}
+	if r, queued, err := campaigns.AddRecipient(ctx, draft.ID, "Draft Student", "d@example.com", 3); err != nil || queued || r.Status != "valid" {
+		t.Fatalf("draft: queued=%v status=%s err=%v", queued, r.Status, err)
+	}
+}

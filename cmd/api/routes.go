@@ -36,6 +36,7 @@ func (app *application) routes() http.Handler {
 	router.Handler(http.MethodPost, "/api/v1/campaigns/:id/csv", admin(app.uploadCampaignCSVHandler))
 	router.Handler(http.MethodPost, "/api/v1/campaigns/:id/start", admin(app.startCampaignHandler))
 	router.Handler(http.MethodPost, "/api/v1/campaigns/:id/retry", admin(app.retryCampaignHandler))
+	router.Handler(http.MethodPost, "/api/v1/campaigns/:id/recipients", admin(app.addRecipientHandler))
 	router.Handler(http.MethodGet, "/api/v1/campaigns/:id/recipients", admin(app.listRecipientsHandler))
 
 	router.Handler(http.MethodGet, "/api/v1/delivery/status", admin(app.deliveryStatusHandler))

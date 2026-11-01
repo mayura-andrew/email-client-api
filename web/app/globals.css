@@ -693,3 +693,48 @@ button.stat.is-active { border-color: var(--brand); box-shadow: 0 0 0 3px var(--
 .panel.is-reviewing { border-color: #f4dcb5; box-shadow: 0 0 0 3px #fff4e2, var(--shadow); }
 .rows-table td.col-issue { max-width: none; }
 .rows-table .col-issue { min-width: 240px; }
+
+/* ==========================================================================
+   Manual recipients
+   ========================================================================== */
+.text-brand { color: var(--brand); }
+.audience-start { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; align-items: stretch; }
+.audience-start .panel { display: grid; gap: 16px; align-content: start; animation: fade-up .3s var(--ease) both; }
+.audience-start .panel:nth-child(2) { animation-delay: .06s; }
+.audience-start .dropzone { padding: 36px 20px; }
+.option-head { display: flex; gap: 12px; align-items: center; }
+.option-head p { margin: 2px 0 0; }
+.option-icon { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; background: var(--brand-soft); color: var(--brand); flex: none; }
+.file-actions { display: flex; gap: 8px; align-items: center; }
+
+.manual-panel summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 9px; font-weight: 650; }
+.manual-panel summary::-webkit-details-marker { display: none; }
+.manual-panel summary .muted { margin-left: auto; font-weight: 400; }
+.manual-panel[open] summary { margin-bottom: 16px; }
+.manual-entry { display: grid; gap: 14px; }
+.manual-entry .segmented-control { width: fit-content; }
+
+.recipient-form { display: grid; grid-template-columns: 1fr 1fr auto; gap: 12px; align-items: start; }
+.recipient-form .field + .field { margin-top: 0; }
+.recipient-form > .btn { margin-top: 24px; height: 40px; }
+.recipient-form .span-all { grid-column: 1 / -1; margin: 0; }
+.modal .recipient-form { grid-template-columns: 1fr; margin-top: 10px; }
+.modal .recipient-form > .btn { margin-top: 4px; justify-self: end; }
+.field.has-error input { border-color: var(--failed); box-shadow: 0 0 0 3px var(--failed-soft); }
+.field-error { font-weight: 500; font-size: 12px; color: var(--failed); animation: fade-up .2s both; }
+.field-suggestion { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-weight: 400; font-size: 12px; color: #8d5313; background: var(--retrying-soft); padding: 6px 9px; border-radius: 7px; animation: fade-up .2s both; }
+.field-suggestion button { margin-left: auto; border: 0; background: #fbe2c2; color: #7a4510; font-weight: 600; font-size: 11.5px; padding: 2px 9px; border-radius: 5px; cursor: pointer; }
+
+.paste-list { display: grid; gap: 10px; }
+.paste-list textarea { font: 13px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.paste-actions { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+
+.manual-tag { display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; font-weight: 700; color: var(--brand); background: var(--brand-soft); padding: 2px 4px 2px 7px; border-radius: 5px; }
+.manual-tag button { border: 0; background: transparent; color: var(--brand); width: 16px; height: 16px; display: grid; place-items: center; border-radius: 4px; cursor: pointer; padding: 0; }
+.manual-tag button:hover { background: #cde9da; color: var(--failed); }
+.rows-table .col-line { width: 76px; }
+/* The start screen card is half width: stack the form so nothing is clipped. */
+.audience-start .recipient-form { grid-template-columns: 1fr; }
+.audience-start .recipient-form > .btn { margin-top: 2px; justify-self: end; }
+.field-suggestion { flex-wrap: nowrap; }
+.field-suggestion > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
