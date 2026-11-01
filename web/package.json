@@ -2,9 +2,10 @@
   "name": "certificate-mailer-admin",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start"
+    "dev": "bun --bun next dev",
+    "build": "bun --bun next build",
+    "start": "bun --bun next start",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "next": "16.4.3",
@@ -16,5 +17,6 @@
     "@types/react": "18.3.12",
     "@types/react-dom": "18.3.1",
     "typescript": "5.7.2"
-  }
+  },
+  "packageManager": "bun@1.3.14"
 }

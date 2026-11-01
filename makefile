@@ -46,10 +46,10 @@ run/mailpit:
 run/api:
 	go run ./cmd/api -db-dsn='${EMAIL_API_DB_DSN}' -redis-url='${EMAIL_API_REDIS_URL}'
 
-## run/web: run the admin UI dev server
+## run/web: run the admin UI dev server on Bun
 .PHONY: run/web
 run/web:
-	cd web && npm run dev
+	cd web && bun install && bun run dev
 
 ## up: build and start the full stack (db, redis, api, web)
 .PHONY: up
@@ -129,6 +129,11 @@ test/integration:
 	go test -race -count=1 ./internal/outbox/; \
 	status=$$?; docker rm -f email-api-test-pg email-api-test-redis >/dev/null; exit $$status
 
+## web/typecheck: type-check the admin UI
+.PHONY: web/typecheck
+web/typecheck:
+	cd web && bun install --frozen-lockfile && bun run typecheck
+
 ## audit: verify modules, check formatting, vet, lint and test
 .PHONY: audit
 audit:
@@ -149,7 +154,12 @@ build/api:
 	go build -ldflags='-s' -o=./bin/api ./cmd/api
 	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags='-s' -o=./bin/linux_amd64/api ./cmd/api
 
-## build/docker: build the API Docker image
+## build/web: production build of the admin UI with Bun
+.PHONY: build/web
+build/web:
+	cd web && bun install --frozen-lockfile && bun run build
+
+## build/docker: build the API and admin Docker images
 .PHONY: build/docker
 build/docker:
-	docker compose build api
+	docker compose build api web

@@ -1,20 +1,22 @@
-FROM node:22-alpine AS dependencies
+# Bun is both the package manager and the runtime; Node is not installed.
+FROM oven/bun:1.3.14-alpine AS dependencies
 WORKDIR /app
-COPY package.json package-lock.json ./
-RUN npm ci
+COPY package.json bun.lock ./
+RUN bun install --frozen-lockfile
 
-FROM node:22-alpine AS builder
+FROM oven/bun:1.3.14-alpine AS builder
 WORKDIR /app
 COPY --from=dependencies /app/node_modules ./node_modules
 COPY . .
-RUN npm run build
+RUN bun run build
 
-FROM node:22-alpine
+FROM oven/bun:1.3.14-alpine
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/package.json ./package.json
 COPY --from=dependencies /app/node_modules ./node_modules
+USER bun
 EXPOSE 3000
-CMD ["npm", "start"]
+CMD ["bun", "run", "start"]

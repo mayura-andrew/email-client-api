@@ -210,6 +210,11 @@ make audit             # mod verify, gofmt, vet, golangci-lint, tests
 make outbox/status     # queue depth and Redis consumer group state
 ```
 
+The admin UI in `web/` uses [Bun](https://bun.sh) (1.3.14, pinned in
+`package.json`) as both package manager and runtime: `bun install`, then
+`bun run dev`, `bun run build` or `bun run start`. Node.js is not required, and
+the Docker image is built on `oven/bun`.
+
 Database targets use `EMAIL_API_DB_DSN` and `EMAIL_API_REDIS_URL`, which default to
 the Compose ports (`localhost:5434` and `localhost:6380`). Override them in
 `.envrc` or on the command line. They deliberately ignore a `DB_DSN` exported for
