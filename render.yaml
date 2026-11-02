@@ -1,0 +1,75 @@
+# Render Blueprint: the API and the admin UI as two Docker web services.
+# PostgreSQL and Redis (Valkey) are external, on Aiven. Values marked
+# `sync: false` are asked for when the Blueprint is first applied.
+services:
+  - type: web
+    name: email-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/v1/healthcheck
+    envVars:
+      # Aiven "Service URI", e.g. postgres://avnadmin:...@...aivencloud.com:12345/defaultdb?sslmode=require
+      - key: DB_DSN
+        sync: false
+      # Aiven for Valkey "Service URI", e.g. rediss://default:...@...aivencloud.com:12346
+      - key: REDIS_URL
+        sync: false
+      # Aiven free PostgreSQL allows 20 connections.
+      - key: DB_MAX_OPEN_CONNS
+        value: "10"
+      - key: DB_MAX_IDLE_CONNS
+        value: "5"
+      # Public URL of this service, used in email links: https://email-api-xxxx.onrender.com
+      - key: URL
+        sync: false
+      # Public URL of the email-web service.
+      - key: CORS_TRUSTED_ORIGINS
+        sync: false
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      # Also encrypts the stored SMTP password: changing it later means re-entering SMTP settings.
+      - key: ADMIN_SESSION_SECRET
+        generateValue: true
+      - key: COOKIE_SECURE
+        value: "true"
+      # Every request reaches the API through Render's proxy (and the web proxy),
+      # so the per-client limit is effectively shared by all admins.
+      - key: API_RATE_LIMIT_RPS
+        value: "30"
+      - key: API_RATE_LIMIT_BURST
+        value: "60"
+      - key: SMTPHOST
+        value: smtp.gmail.com
+      - key: SMTPPORT
+        value: "587"
+      - key: SMTPUSERNAME
+        sync: false
+      - key: SMTPPASS
+        sync: false
+      - key: SMTPSENDER
+        sync: false
+      - key: WORKER_CONCURRENCY
+        value: "4"
+      - key: SMTP_RATE_PER_SECOND
+        value: "2"
+      # Gmail: 500/day, Google Workspace: 2000/day.
+      - key: SMTP_DAILY_LIMIT
+        value: "500"
+      - key: OUTBOX_MAX_ATTEMPTS
+        value: "5"
+
+  - type: web
+    name: email-web
+    runtime: docker
+    plan: free
+    dockerfilePath: ./web/Dockerfile
+    dockerContext: ./web
+    envVars:
+      # Public URL of the email-api service, without a trailing path. Read at
+      # build time: redeploy this service after changing it.
+      - key: API_PROXY_URL
+        sync: false

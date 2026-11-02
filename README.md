@@ -124,6 +124,33 @@ newly generated certificates. `CERTIFICATE_TEMPLATE` is only the default used
 until a template has been uploaded. PDF templates receive the personalized student
 name as a text overlay; JPG templates are converted to a new PDF.
 
+## Deploying to Render with Aiven
+
+`render.yaml` deploys the API and the admin UI as two free Render web
+services. PostgreSQL and Redis come from Aiven's free plans.
+
+1. In the [Aiven console](https://console.aiven.io), create a free
+   **PostgreSQL** service and a free **Valkey** service (Aiven's
+   Redis-compatible store). Copy each one's **Service URI**. Keep `sslmode=require`
+   on the PostgreSQL URI. The Valkey URI starts with `rediss://` (TLS).
+2. In Render, choose **New > Blueprint**, pick this repository, and fill in the
+   prompted values: `DB_DSN` and `REDIS_URL` from step 1, the admin login, and
+   the SMTP account. Leave `URL`, `CORS_TRUSTED_ORIGINS` and `API_PROXY_URL`
+   empty for now.
+3. When both services have URLs, set `URL` on `email-api` to its own URL,
+   `CORS_TRUSTED_ORIGINS` to the `email-web` URL, and `API_PROXY_URL` on
+   `email-web` to the `email-api` URL. Then redeploy both services.
+   `API_PROXY_URL` is read at build time, so `email-web` must be rebuilt.
+
+Migrations run when the API starts. Use the `email-web` URL to sign in. It
+forwards `/api/*` to the API, so the session cookie stays on one site.
+
+Free Render services go to sleep after 15 minutes without HTTP traffic, and
+the delivery workers stop with them. Nothing is lost: queued certificates are
+kept in PostgreSQL and sending resumes when the service wakes. To keep a long
+campaign running, keep the API page open, ping `/api/v1/healthcheck` every few
+minutes from an uptime monitor, or move `email-api` to a paid plan.
+
 ## Delivery architecture
 
 All email (certificate campaigns and `POST /api/v1/send`) goes through one

@@ -6,6 +6,8 @@ RUN bun install --frozen-lockfile
 
 FROM oven/bun:1.3.14-alpine AS builder
 WORKDIR /app
+# Set on Render to proxy /api/* to the API service; rewrites are fixed at build time.
+ARG API_PROXY_URL
 COPY --from=dependencies /app/node_modules ./node_modules
 COPY . .
 RUN bun run build
