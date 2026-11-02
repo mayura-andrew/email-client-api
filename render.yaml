@@ -10,6 +10,8 @@ services:
     dockerContext: .
     healthCheckPath: /api/v1/healthcheck
     envVars:
+      - key: APP_ENV
+        value: production
       # Aiven "Service URI", e.g. postgres://avnadmin:...@...aivencloud.com:12345/defaultdb?sslmode=require
       - key: DB_DSN
         sync: false

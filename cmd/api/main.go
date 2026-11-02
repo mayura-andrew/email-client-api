@@ -227,9 +227,11 @@ func main() {
 	logger.PrintInfo("database connection pool established", map[string]string{})
 
 	if cfg.migrate {
-		if err := runMigration(db); err != nil {
+		version, err := runMigration(db)
+		if err != nil {
 			logger.PrintFatal(err, map[string]string{})
 		}
+		logger.PrintInfo("database migrations applied", map[string]string{"version": fmt.Sprint(version)})
 	}
 
 	rdb, err := openRedis(cfg)
@@ -401,23 +403,25 @@ func openRedis(cfg config) (*redis.Client, error) {
 	return nil, err
 }
 
-func runMigration(db *sql.DB) error {
+// runMigration applies pending migrations and returns the schema version.
+func runMigration(db *sql.DB) (uint, error) {
 	driver, err := postgres.WithInstance(db, &postgres.Config{})
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	m, err := migrate.NewWithDatabaseInstance("file://./migrations", "postgres", driver)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	err = m.Up()
 	if err != nil && err != migrate.ErrNoChange {
-		return err
+		return 0, err
 	}
 
-	return nil
+	version, _, err := m.Version()
+	return version, err
 }
 
 func envString(name, fallback string) string {
