@@ -44,6 +44,7 @@ type CampaignRecipient struct {
 	ID           int64  `json:"id"`
 	CampaignID   int64  `json:"campaignId"`
 	StudentName  string `json:"studentName"`
+	Number       string `json:"certificateNumber"`
 	Email        string `json:"email"`
 	Status       string `json:"status"`
 	ErrorMessage string `json:"errorMessage,omitempty"`
@@ -140,7 +141,7 @@ func (m CampaignModel) List(ctx context.Context, page Page) ([]Campaign, int, er
 // campaigns keep them as "valid" for the next Start; a running or completed
 // campaign queues them straight into the outbox in the same transaction (and a
 // completed campaign goes back to running until they are delivered).
-func (m CampaignModel) AddRecipient(ctx context.Context, campaignID int64, name, email string, maxAttempts int) (CampaignRecipient, bool, error) {
+func (m CampaignModel) AddRecipient(ctx context.Context, campaignID int64, name, email, number string, maxAttempts int) (CampaignRecipient, bool, error) {
 	tx, err := m.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return CampaignRecipient{}, false, err
@@ -156,13 +157,13 @@ func (m CampaignModel) AddRecipient(ctx context.Context, campaignID int64, name,
 		return CampaignRecipient{}, false, err
 	}
 	queue := status == "running" || status == "completed"
-	r := CampaignRecipient{CampaignID: campaignID, StudentName: name, Email: email, Status: "valid"}
+	r := CampaignRecipient{CampaignID: campaignID, StudentName: name, Number: number, Email: email, Status: "valid"}
 	if queue {
 		r.Status = "queued"
 	}
-	err = tx.QueryRowContext(ctx, `INSERT INTO campaign_recipients (campaign_id, student_name, email, status)
-		VALUES ($1, $2, $3, $4) ON CONFLICT (campaign_id, email) DO NOTHING RETURNING id`,
-		campaignID, name, email, r.Status).Scan(&r.ID)
+	err = tx.QueryRowContext(ctx, `INSERT INTO campaign_recipients (campaign_id, student_name, email, certificate_number, status)
+		VALUES ($1, $2, $3, $4, $5) ON CONFLICT (campaign_id, email) DO NOTHING RETURNING id`,
+		campaignID, name, email, number, r.Status).Scan(&r.ID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return CampaignRecipient{}, false, ErrDuplicateRecipient
 	}
@@ -185,7 +186,7 @@ func (m CampaignModel) AddRecipient(ctx context.Context, campaignID int64, name,
 	return r, queue, tx.Commit()
 }
 
-func (m CampaignModel) ImportRecipients(ctx context.Context, campaignID int64, names, emails []string, totalRows int) (ImportResult, error) {
+func (m CampaignModel) ImportRecipients(ctx context.Context, campaignID int64, names, emails, numbers []string, totalRows int) (ImportResult, error) {
 	tx, err := m.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return ImportResult{}, err
@@ -204,9 +205,9 @@ func (m CampaignModel) ImportRecipients(ctx context.Context, campaignID int64, n
 		return ImportResult{}, ErrCampaignNotDraft
 	}
 
-	result, err := tx.ExecContext(ctx, `INSERT INTO campaign_recipients (campaign_id, student_name, email, status)
-		SELECT $1, name, email, 'valid' FROM unnest($2::text[], $3::text[]) AS t(name, email)
-		ON CONFLICT (campaign_id, email) DO NOTHING`, campaignID, pq.Array(names), pq.Array(emails))
+	result, err := tx.ExecContext(ctx, `INSERT INTO campaign_recipients (campaign_id, student_name, email, certificate_number, status)
+		SELECT $1, name, email, number, 'valid' FROM unnest($2::text[], $3::text[], $4::text[]) AS t(name, email, number)
+		ON CONFLICT (campaign_id, email) DO NOTHING`, campaignID, pq.Array(names), pq.Array(emails), pq.Array(numbers))
 	if err != nil {
 		return ImportResult{}, err
 	}
@@ -285,12 +286,13 @@ func (m CampaignModel) CompleteFinished(ctx context.Context) error {
 
 func (m CampaignModel) Recipients(ctx context.Context, id int64, filter RecipientFilter, page Page) ([]CampaignRecipient, int, error) {
 	const where = `WHERE campaign_id = $1 AND ($2 = '' OR status = $2)
-		AND ($3 = '' OR student_name ILIKE '%' || $3 || '%' OR email ILIKE '%' || $3 || '%')`
+		AND ($3 = '' OR student_name ILIKE '%' || $3 || '%' OR email ILIKE '%' || $3 || '%'
+			OR certificate_number ILIKE '%' || $3 || '%')`
 	var total int
 	if err := m.DB.QueryRowContext(ctx, `SELECT COUNT(*) FROM campaign_recipients `+where, id, filter.Status, filter.Search).Scan(&total); err != nil {
 		return nil, 0, err
 	}
-	rows, err := m.DB.QueryContext(ctx, `SELECT id, campaign_id, student_name, email, status, COALESCE(error_message, '')
+	rows, err := m.DB.QueryContext(ctx, `SELECT id, campaign_id, student_name, certificate_number, email, status, COALESCE(error_message, '')
 		FROM campaign_recipients `+where+` ORDER BY id LIMIT $4 OFFSET $5`, id, filter.Status, filter.Search, page.Limit(), page.Offset())
 	if err != nil {
 		return nil, 0, err
@@ -299,7 +301,7 @@ func (m CampaignModel) Recipients(ctx context.Context, id int64, filter Recipien
 	recipients := []CampaignRecipient{}
 	for rows.Next() {
 		var r CampaignRecipient
-		if err := rows.Scan(&r.ID, &r.CampaignID, &r.StudentName, &r.Email, &r.Status, &r.ErrorMessage); err != nil {
+		if err := rows.Scan(&r.ID, &r.CampaignID, &r.StudentName, &r.Number, &r.Email, &r.Status, &r.ErrorMessage); err != nil {
 			return nil, 0, err
 		}
 		recipients = append(recipients, r)
@@ -309,9 +311,9 @@ func (m CampaignModel) Recipients(ctx context.Context, id int64, filter Recipien
 
 func (m CampaignModel) CertificateDelivery(ctx context.Context, recipientID int64) (CertificateDelivery, error) {
 	var d CertificateDelivery
-	err := m.DB.QueryRowContext(ctx, `SELECT r.id, r.campaign_id, r.student_name, r.email, r.status, c.subject, c.body, c.sender
+	err := m.DB.QueryRowContext(ctx, `SELECT r.id, r.campaign_id, r.student_name, r.certificate_number, r.email, r.status, c.subject, c.body, c.sender
 		FROM campaign_recipients r JOIN campaigns c ON c.id = r.campaign_id WHERE r.id = $1`, recipientID).
-		Scan(&d.Recipient.ID, &d.Recipient.CampaignID, &d.Recipient.StudentName, &d.Recipient.Email, &d.Recipient.Status,
+		Scan(&d.Recipient.ID, &d.Recipient.CampaignID, &d.Recipient.StudentName, &d.Recipient.Number, &d.Recipient.Email, &d.Recipient.Status,
 			&d.Subject, &d.Body, &d.Sender)
 	if errors.Is(err, sql.ErrNoRows) {
 		return d, ErrRecordNotFound

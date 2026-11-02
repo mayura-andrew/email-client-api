@@ -17,6 +17,17 @@ import (
 
 const maxTemplateBytes = 20 << 20
 
+// sampleNumber stands in for a real certificate number in previews, so admins
+// can check its placement before sending.
+const sampleNumber = "CERT-000001"
+
+func previewNumber(value string) string {
+	if value = strings.TrimSpace(value); value != "" {
+		return value
+	}
+	return sampleNumber
+}
+
 func (app *application) settingsHandler(w http.ResponseWriter, r *http.Request) {
 	snapshot := app.settings.Current()
 	_ = app.writeJSON(w, http.StatusOK, envelop{
@@ -28,10 +39,13 @@ func (app *application) settingsHandler(w http.ResponseWriter, r *http.Request) 
 			"configured": snapshot.SMTP.Configured(),
 		},
 		"certificate": envelop{
-			"template": snapshot.Certificate.Template.Filename,
-			"nameX":    snapshot.Certificate.NameX,
-			"nameY":    snapshot.Certificate.NameY,
-			"nameSize": snapshot.Certificate.NameSize,
+			"template":   snapshot.Certificate.Template.Filename,
+			"nameX":      snapshot.Certificate.NameX,
+			"nameY":      snapshot.Certificate.NameY,
+			"nameSize":   snapshot.Certificate.NameSize,
+			"numberX":    snapshot.Certificate.NumberX,
+			"numberY":    snapshot.Certificate.NumberY,
+			"numberSize": snapshot.Certificate.NumberSize,
 		},
 		"delivery": envelop{
 			"workersPerReplica": app.config.delivery.workers,
@@ -183,7 +197,7 @@ func (app *application) previewTemplateUploadHandler(w http.ResponseWriter, r *h
 	}
 	cfg := app.settings.Current().Certificate
 	cfg.Template = template
-	content, filename, err := certificate.Generate(name, cfg)
+	content, filename, err := certificate.Generate(name, previewNumber(r.FormValue("certificate_number")), cfg)
 	if err != nil {
 		app.errorResponse(w, r, http.StatusUnprocessableEntity, "a certificate could not be rendered from this template: "+err.Error())
 		return
@@ -202,7 +216,7 @@ func (app *application) uploadCertificateTemplateHandler(w http.ResponseWriter, 
 	}
 	trial := app.settings.Current().Certificate
 	trial.Template = template
-	if _, _, err := certificate.Generate("Template Check", trial); err != nil {
+	if _, _, err := certificate.Generate("Template Check", sampleNumber, trial); err != nil {
 		app.errorResponse(w, r, http.StatusUnprocessableEntity, "a certificate could not be rendered from this template: "+err.Error())
 		return
 	}
@@ -222,7 +236,8 @@ func (app *application) certificatePreviewHandler(w http.ResponseWriter, r *http
 	if name == "" {
 		name = "Student Name"
 	}
-	content, filename, err := certificate.Generate(name, app.settings.Current().Certificate)
+	number := previewNumber(r.URL.Query().Get("certificate_number"))
+	content, filename, err := certificate.Generate(name, number, app.settings.Current().Certificate)
 	if err != nil {
 		app.serverErrorRespone(w, r, err)
 		return

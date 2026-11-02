@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/mayura-andrew/email-client/internal/data"
 	"github.com/mayura-andrew/email-client/internal/outbox"
@@ -16,6 +17,8 @@ const (
 	maxCSVBytes        = 10 << 20
 	maxCSVRows         = 50000
 	maxInvalidReported = 1000
+	// Matches campaign_recipients.certificate_number.
+	maxNumberLength = 128
 )
 
 func (app *application) createCampaignHandler(w http.ResponseWriter, r *http.Request) {
@@ -92,9 +95,14 @@ func (app *application) uploadCampaignCSVHandler(w http.ResponseWriter, r *http.
 		app.errorResponse(w, r, http.StatusUnprocessableEntity, "CSV must contain student_name and email columns")
 		return
 	}
+	// certificate_number is optional; without it certificates carry no number.
+	numberIndex, numberOK := header["certificate_number"]
+	if !numberOK {
+		numberIndex = -1
+	}
 
 	var total, invalidCount int
-	var names, emails []string
+	var names, emails, numbers []string
 	invalid := make([]map[string]string, 0)
 	seen := map[string]bool{}
 	for {
@@ -111,16 +119,21 @@ func (app *application) uploadCampaignCSVHandler(w http.ResponseWriter, r *http.
 			app.errorResponse(w, r, http.StatusRequestEntityTooLarge, "CSV must not contain more than 50000 rows")
 			return
 		}
-		var name, email, reason string
+		var name, email, number, reason string
 		if nameIndex < len(row) && emailIndex < len(row) {
 			name, email = strings.TrimSpace(row[nameIndex]), strings.ToLower(strings.TrimSpace(row[emailIndex]))
 		} else {
 			reason = "row is missing columns"
 		}
+		if numberIndex >= 0 && numberIndex < len(row) {
+			number = strings.TrimSpace(row[numberIndex])
+		}
 		switch {
 		case reason != "":
 		case name == "":
 			reason = "student_name is required"
+		case utf8.RuneCountInString(number) > maxNumberLength:
+			reason = "certificate_number is too long"
 		case validator.EmailProblem(email) != "":
 			reason = validator.EmailProblem(email)
 		case seen[email]:
@@ -136,9 +149,10 @@ func (app *application) uploadCampaignCSVHandler(w http.ResponseWriter, r *http.
 		seen[email] = true
 		names = append(names, name)
 		emails = append(emails, email)
+		numbers = append(numbers, number)
 	}
 
-	result, err := app.models.Campaigns.ImportRecipients(r.Context(), campaignID, names, emails, total)
+	result, err := app.models.Campaigns.ImportRecipients(r.Context(), campaignID, names, emails, numbers, total)
 	switch {
 	case errors.Is(err, data.ErrRecordNotFound):
 		app.notFoundResponse(w, r)
@@ -167,8 +181,9 @@ func (app *application) addRecipientHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	var request struct {
-		StudentName string `json:"studentName"`
-		Email       string `json:"email"`
+		StudentName       string `json:"studentName"`
+		Email             string `json:"email"`
+		CertificateNumber string `json:"certificateNumber"`
 	}
 	if err := app.readJSON(w, r, &request); err != nil {
 		app.badRequestResponse(w, r, err)
@@ -184,7 +199,12 @@ func (app *application) addRecipientHandler(w http.ResponseWriter, r *http.Reque
 		app.failedValidationResponse(w, r, map[string]string{"email": problem})
 		return
 	}
-	recipient, queued, err := app.models.Campaigns.AddRecipient(r.Context(), campaignID, name, email, app.config.delivery.maxAttempts)
+	number := strings.TrimSpace(request.CertificateNumber)
+	if utf8.RuneCountInString(number) > maxNumberLength {
+		app.failedValidationResponse(w, r, map[string]string{"certificateNumber": "Certificate number is too long"})
+		return
+	}
+	recipient, queued, err := app.models.Campaigns.AddRecipient(r.Context(), campaignID, name, email, number, app.config.delivery.maxAttempts)
 	switch {
 	case errors.Is(err, data.ErrRecordNotFound):
 		app.notFoundResponse(w, r)

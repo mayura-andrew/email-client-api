@@ -87,10 +87,12 @@ func seedCampaign(t *testing.T, db *sql.DB, emails ...string) int64 {
 		t.Fatal(err)
 	}
 	names := make([]string, len(emails))
+	numbers := make([]string, len(emails))
 	for i := range emails {
 		names[i] = "Student " + emails[i]
+		numbers[i] = fmt.Sprintf("CERT-%04d", i+1)
 	}
-	if _, err := campaigns.ImportRecipients(ctx, campaign.ID, names, emails, len(emails)); err != nil {
+	if _, err := campaigns.ImportRecipients(ctx, campaign.ID, names, emails, numbers, len(emails)); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := campaigns.Start(ctx, campaign.ID, 3); err != nil {
@@ -453,7 +455,7 @@ func TestAddRecipientByHand(t *testing.T) {
 	id := seedCampaign(t, db, "a@example.com")
 
 	// Running campaign: queued straight into the outbox.
-	r, queued, err := campaigns.AddRecipient(ctx, id, "Late Student", "late@example.com", 3)
+	r, queued, err := campaigns.AddRecipient(ctx, id, "Late Student", "late@example.com", "CERT-LATE", 3)
 	if err != nil || !queued || r.Status != "queued" {
 		t.Fatalf("running campaign: queued=%v status=%s err=%v", queued, r.Status, err)
 	}
@@ -461,7 +463,7 @@ func TestAddRecipientByHand(t *testing.T) {
 	if err := db.QueryRow(`SELECT status FROM outbox_messages WHERE aggregate_id=$1`, r.ID).Scan(&outboxStatus); err != nil || outboxStatus != "pending" {
 		t.Fatalf("outbox row status=%q err=%v", outboxStatus, err)
 	}
-	if _, _, err := campaigns.AddRecipient(ctx, id, "Again", "late@example.com", 3); !errors.Is(err, data.ErrDuplicateRecipient) {
+	if _, _, err := campaigns.AddRecipient(ctx, id, "Again", "late@example.com", "", 3); !errors.Is(err, data.ErrDuplicateRecipient) {
 		t.Fatalf("duplicate add: err=%v", err)
 	}
 
@@ -469,7 +471,7 @@ func TestAddRecipientByHand(t *testing.T) {
 	if _, err := db.Exec(`UPDATE campaigns SET status='completed', completed_at=NOW() WHERE id=$1`, id); err != nil {
 		t.Fatal(err)
 	}
-	if _, queued, err := campaigns.AddRecipient(ctx, id, "Later Student", "later@example.com", 3); err != nil || !queued {
+	if _, queued, err := campaigns.AddRecipient(ctx, id, "Later Student", "later@example.com", "", 3); err != nil || !queued {
 		t.Fatalf("completed campaign: queued=%v err=%v", queued, err)
 	}
 	campaign, _ := campaigns.Get(ctx, id)
@@ -482,7 +484,7 @@ func TestAddRecipientByHand(t *testing.T) {
 	if err := campaigns.Create(ctx, draft); err != nil {
 		t.Fatal(err)
 	}
-	if r, queued, err := campaigns.AddRecipient(ctx, draft.ID, "Draft Student", "d@example.com", 3); err != nil || queued || r.Status != "valid" {
+	if r, queued, err := campaigns.AddRecipient(ctx, draft.ID, "Draft Student", "d@example.com", "", 3); err != nil || queued || r.Status != "valid" {
 		t.Fatalf("draft: queued=%v status=%s err=%v", queued, r.Status, err)
 	}
 }

@@ -50,8 +50,8 @@ export default function CampaignPage() {
   const [confirmStart, setConfirmStart] = useState(false);
   const [adding, setAdding] = useState(false);
 
-  async function addRecipient(studentName: string, email: string) {
-    const result = await api<{ queued: boolean }>(`/api/v1/campaigns/${id}/recipients`, { method: "POST", body: JSON.stringify({ studentName, email }) });
+  async function addRecipient(studentName: string, email: string, certificateNumber: string) {
+    const result = await api<{ queued: boolean }>(`/api/v1/campaigns/${id}/recipients`, { method: "POST", body: JSON.stringify({ studentName, email, certificateNumber }) });
     toast("success", `${studentName} added`, result.queued ? "Their certificate is queued and will be sent shortly." : "They will be included when the campaign starts.");
     setAdding(false);
     if (result.queued) setLive(true);
@@ -150,19 +150,20 @@ export default function CampaignPage() {
           </div>
           <label className="search">
             <Icon name="search" size={16} />
-            <input placeholder="Search name or email" value={search} onChange={e => setSearch(e.target.value)} />
+            <input placeholder="Search name, email or number" value={search} onChange={e => setSearch(e.target.value)} />
           </label>
         </div>
         {recipients.loading ? <div className="table-skeleton">{Array.from({ length: 6 }, (_, i) => <div key={i} className="skeleton-line"><Skeleton width={32} height={32} radius={16} /><Skeleton width="25%" /><Skeleton width="30%" /><Skeleton width={80} height={22} radius={11} /></div>)}</div>
           : recipients.data?.recipients.length === 0 ? <EmptyState icon="users" title="No recipients match">Change the filter or search.</EmptyState>
           : (
             <table className="table">
-              <thead><tr><th>Student</th><th>Email</th><th>Status</th><th>Details</th></tr></thead>
+              <thead><tr><th>Student</th><th>Email</th><th>Certificate no.</th><th>Status</th><th>Details</th></tr></thead>
               <tbody>
                 {recipients.data?.recipients.map(r => (
                   <tr key={r.id} className={`row-${r.status}`}>
                     <td><div className="person"><span className="avatar">{initials(r.studentName)}</span>{r.studentName}</div></td>
                     <td className="muted">{r.email}</td>
+                    <td className="muted tabular">{r.certificateNumber || "—"}</td>
                     <td><StatusBadge status={r.status} /></td>
                     <td className={r.status === "failed" ? "text-red small" : "muted small"} title={r.errorMessage}>{r.errorMessage ? truncate(r.errorMessage, 90) : "—"}</td>
                   </tr>

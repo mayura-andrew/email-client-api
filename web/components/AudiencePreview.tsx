@@ -50,17 +50,18 @@ export function AudiencePreview({ audience, onMapping, onFix, showMapping = true
         <div className="panel-head">
           <div>
             <h2>Columns</h2>
-            <p className="muted small">{headers.length} columns detected. Choose which ones hold the name and the email; other columns are ignored.</p>
+            <p className="muted small">{headers.length} columns detected. Choose which ones hold the name, the email and the certificate number; other columns are ignored.</p>
           </div>
         </div>
         <div className="mapping">
           <MappingSelect label="Student name" icon="users" value={mapping.name} headers={headers} onChange={name => onMapping({ ...mapping, name })} />
           <MappingSelect label="Email address" icon="mail" value={mapping.email} headers={headers} onChange={email => onMapping({ ...mapping, email })} />
+          <MappingSelect label="Certificate number" icon="award" optional value={mapping.number} headers={headers} onChange={number => onMapping({ ...mapping, number })} />
           <div className="column-chips">
             {headers.map((header, index) => (
-              <span key={index} className={`column-chip ${index === mapping.name ? "is-name" : index === mapping.email ? "is-email" : ""}`}>
+              <span key={index} className={`column-chip ${index === mapping.name ? "is-name" : index === mapping.email ? "is-email" : index === mapping.number ? "is-number" : ""}`}>
                 {header || `Column ${index + 1}`}
-                <em>{index === mapping.name ? "Name" : index === mapping.email ? "Email" : "Not used"}</em>
+                <em>{index === mapping.name ? "Name" : index === mapping.email ? "Email" : index === mapping.number ? "Number" : "Not used"}</em>
               </span>
             ))}
           </div>
@@ -115,12 +116,14 @@ export function AudiencePreview({ audience, onMapping, onFix, showMapping = true
   );
 }
 
-function MappingSelect({ label, icon, value, headers, onChange }: { label: string; icon: IconName; value: number; headers: string[]; onChange: (index: number) => void }) {
+function MappingSelect({ label, icon, value, headers, onChange, optional }: {
+  label: string; icon: IconName; value: number; headers: string[]; onChange: (index: number) => void; optional?: boolean;
+}) {
   return (
-    <label className={`mapping-select ${value < 0 ? "is-missing" : ""}`}>
-      <span><Icon name={icon} size={14} /> {label}</span>
+    <label className={`mapping-select ${value < 0 && !optional ? "is-missing" : ""}`}>
+      <span><Icon name={icon} size={14} /> {label}{optional && <span className="muted"> · optional</span>}</span>
       <select value={value} onChange={e => onChange(Number(e.target.value))}>
-        <option value={-1}>Choose a column…</option>
+        <option value={-1}>{optional ? "None (no number on certificates)" : "Choose a column…"}</option>
         {headers.map((header, index) => <option key={index} value={index}>{header || `Column ${index + 1}`}</option>)}
       </select>
     </label>
@@ -177,10 +180,11 @@ function RowsTable({ headers, mapping, rows, onFix, onRemove }: {
             <th className="col-status">Status</th>
             <th className="col-issue">Issue</th>
             {headers.map((header, index) => (
-              <th key={index} className={index === mapping.name || index === mapping.email ? "is-mapped" : ""}>
+              <th key={index} className={index === mapping.name || index === mapping.email || index === mapping.number ? "is-mapped" : ""}>
                 {header || `Column ${index + 1}`}
                 {index === mapping.name && <em className="is-name">Name</em>}
                 {index === mapping.email && <em>Email</em>}
+                {index === mapping.number && <em className="is-number">Number</em>}
               </th>
             ))}
           </tr>

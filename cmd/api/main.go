@@ -145,6 +145,10 @@ func main() {
 		NameX:    envFloat("CERTIFICATE_NAME_X", 0),
 		NameY:    envFloat("CERTIFICATE_NAME_Y", 60),
 		NameSize: envFloat("CERTIFICATE_NAME_SIZE", 24),
+		// mm from the bottom-left corner
+		NumberX:    envFloat("CERTIFICATE_NUMBER_X", 15),
+		NumberY:    envFloat("CERTIFICATE_NUMBER_Y", 15),
+		NumberSize: envFloat("CERTIFICATE_NUMBER_SIZE", 10),
 	}
 
 	flag.Float64Var(&cfg.limiter.rps, "limiter-rps", envFloat("API_RATE_LIMIT_RPS", 10), "Rate limiter maximum requests per second per client")

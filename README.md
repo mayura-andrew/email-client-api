@@ -82,7 +82,8 @@ The application runs database migrations automatically when the API starts.
 
 The admin UI is available at `http://localhost:3000`. Sign in with the
 `ADMIN_EMAIL` and `ADMIN_PASSWORD` values from `.env`. Upload a CSV with
-`student_name,email` columns, review validation results, then start the
+`student_name,email` columns and an optional `certificate_number` column,
+review validation results, then start the
 campaign. Each valid row receives a personalized PDF generated from
 `assests/template.jpg`.
 
@@ -109,6 +110,12 @@ Certificate placement uses A4 millimetres. The supplied template defaults to
 centered text at `X=0`, `Y=60`, with font size `24`. Override
 `CERTIFICATE_NAME_X`, `CERTIFICATE_NAME_Y`, and `CERTIFICATE_NAME_SIZE` in
 `.env` if the name needs fine adjustment.
+
+The certificate number is printed with its baseline `15` mm from the left and
+`15` mm from the bottom of the page, at font size `10`. Override
+`CERTIFICATE_NUMBER_X`, `CERTIFICATE_NUMBER_Y`, and `CERTIFICATE_NUMBER_SIZE`
+to move it. Rows without a number get no number on the certificate. Email
+subjects and bodies can use `{{certificate_number}}` as well.
 
 Administrators can replace the certificate template from **Settings** by
 uploading a PDF or JPG up to 20 MB. The template is validated by rendering a

@@ -94,8 +94,13 @@ export function suggestEmail(address: string): string | null {
 
 const NAME_ALIASES = ["student_name", "student name", "name", "full name", "full_name", "fullname", "participant", "participant name", "student"];
 const EMAIL_ALIASES = ["email", "e-mail", "email address", "email_address", "mail", "student email", "student_email", "e-mail address"];
+const NUMBER_ALIASES = ["certificate_number", "certificate number", "certificate no", "certificate_no", "certificate id", "certificate_id", "cert no", "cert_no", "cert number", "certificate"];
 
-export type Mapping = { name: number; email: number };
+// Matches campaign_recipients.certificate_number.
+export const MAX_NUMBER_LENGTH = 128;
+
+/** Column index per field; -1 means no column. The certificate number is optional. */
+export type Mapping = { name: number; email: number; number: number };
 
 export function detectMapping(headers: string[]): Mapping {
   const normalized = headers.map(h => h.trim().toLowerCase());
@@ -106,7 +111,7 @@ export function detectMapping(headers: string[]): Mapping {
     }
     return normalized.findIndex(h => aliases.some(alias => h.includes(alias)));
   };
-  return { name: find(NAME_ALIASES), email: find(EMAIL_ALIASES) };
+  return { name: find(NAME_ALIASES), email: find(EMAIL_ALIASES), number: find(NUMBER_ALIASES) };
 }
 
 // ---------------------------------------------------------------------------
@@ -115,7 +120,7 @@ export function detectMapping(headers: string[]): Mapping {
 
 export type RowStatus = "valid" | "warning" | "invalid" | "duplicate";
 
-export type ManualEntry = { id: number; name: string; email: string };
+export type ManualEntry = { id: number; name: string; email: string; number?: string };
 
 export type AudienceRow = {
   line: number; // line number in the file (header = 1); manual entries continue after the file
@@ -123,6 +128,7 @@ export type AudienceRow = {
   cells: string[];
   name: string;
   email: string;
+  number: string;
   status: RowStatus;
   message?: string;
   suggestion?: string;
@@ -151,25 +157,30 @@ export function analyzeAudience(table: string[][], mapping: Mapping, overrides: 
   if (table.length === 0) return { ...empty, error: "The file is empty." };
   if (mapping.name < 0 || mapping.email < 0) return { ...empty, error: "Choose which columns hold the student name and the email address." };
   if (mapping.name === mapping.email) return { ...empty, error: "Name and email must be different columns." };
+  if (mapping.number >= 0 && (mapping.number === mapping.name || mapping.number === mapping.email)) return { ...empty, error: "The certificate number must be its own column." };
 
   const firstSeen = new Map<string, AudienceRow>();
   const groups = new Map<string, DuplicateGroup>();
-  const width = Math.max(table[0]?.length ?? 0, mapping.name + 1, mapping.email + 1);
+  const width = Math.max(table[0]?.length ?? 0, mapping.name + 1, mapping.email + 1, mapping.number + 1);
   const manualRows = manual.map(entry => {
     const cells = Array<string>(width).fill("");
     cells[mapping.name] = entry.name;
     cells[mapping.email] = entry.email;
-    return { cells, manualId: entry.id };
+    if (mapping.number >= 0) cells[mapping.number] = entry.number ?? "";
+    // Kept even when the file has no number column, so a typed number is not lost.
+    return { cells, manualId: entry.id as number | undefined, number: entry.number ?? "" };
   });
-  const sources = [...table.slice(1).map(cells => ({ cells, manualId: undefined as number | undefined })), ...manualRows];
-  const rows: AudienceRow[] = sources.map(({ cells, manualId }, index) => {
+  const sources = [...table.slice(1).map(cells => ({ cells, manualId: undefined as number | undefined, number: cells[mapping.number] ?? "" })), ...manualRows];
+  const rows: AudienceRow[] = sources.map(({ cells, manualId, number: rawNumber }, index) => {
     const line = index + 2;
     const name = (cells[mapping.name] ?? "").trim();
     const email = (overrides[line] ?? cells[mapping.email] ?? "").trim().toLowerCase();
-    const row: AudienceRow = { line, cells, name, email, status: "valid", manualId };
+    const number = rawNumber.trim();
+    const row: AudienceRow = { line, cells, name, email, number, status: "valid", manualId };
     const problem = emailProblem(email);
     if (cells.length <= Math.max(mapping.name, mapping.email)) { row.status = "invalid"; row.message = "Row is missing columns"; }
     else if (!name) { row.status = "invalid"; row.message = "Student name is empty"; }
+    else if (number.length > MAX_NUMBER_LENGTH) { row.status = "invalid"; row.message = "Certificate number is too long"; }
     else if (problem) { row.status = "invalid"; row.message = problem; }
     else if (firstSeen.has(email)) {
       const first = firstSeen.get(email)!;
@@ -202,7 +213,7 @@ export function analyzeAudience(table: string[][], mapping: Mapping, overrides: 
 /** CSV with exactly the columns the API expects, built from the mapped and corrected rows. */
 export function toUploadCSV(rows: AudienceRow[]): string {
   const quote = (value: string) => /[",\r\n]/.test(value) ? `"${value.replaceAll('"', '""')}"` : value;
-  return ["student_name,email", ...rows.map(row => `${quote(row.name)},${quote(row.email)}`)].join("\n");
+  return ["student_name,email,certificate_number", ...rows.map(row => `${quote(row.name)},${quote(row.email)},${quote(row.number)}`)].join("\n");
 }
 
 /**

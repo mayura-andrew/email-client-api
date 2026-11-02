@@ -111,11 +111,11 @@ func (p *processor) certificateMessage(ctx context.Context, snapshot settings.Sn
 		return nil, "", err
 	}
 	// A template problem is fixable by an admin, so it is retried rather than failed.
-	content, filename, err := certificate.Generate(delivery.Recipient.StudentName, snapshot.Certificate)
+	content, filename, err := certificate.Generate(delivery.Recipient.StudentName, delivery.Recipient.Number, snapshot.Certificate)
 	if err != nil {
 		return nil, "", fmt.Errorf("certificate generation: %w", err)
 	}
-	name, email := delivery.Recipient.StudentName, delivery.Recipient.Email
+	name, email, number := delivery.Recipient.StudentName, delivery.Recipient.Email, delivery.Recipient.Number
 	sender := delivery.Sender
 	if sender == "" {
 		sender = snapshot.SMTP.Sender
@@ -124,9 +124,9 @@ func (p *processor) certificateMessage(ctx context.Context, snapshot settings.Sn
 	message := mail.NewMessage()
 	message.SetHeader("From", sender)
 	message.SetHeader("To", email)
-	message.SetHeader("Subject", strings.ReplaceAll(delivery.Subject, "{{student_name}}", name))
-	body := strings.ReplaceAll(delivery.Body, "{{student_name}}", name)
-	message.SetBody("text/plain", strings.ReplaceAll(body, "{{email}}", email))
+	tokens := strings.NewReplacer("{{student_name}}", name, "{{email}}", email, "{{certificate_number}}", number)
+	message.SetHeader("Subject", tokens.Replace(delivery.Subject))
+	message.SetBody("text/plain", tokens.Replace(delivery.Body))
 	// Attached from memory; the copy func can run more than once if a dead
 	// pooled connection forces a resend.
 	message.Attach(filename, mail.SetCopyFunc(func(w io.Writer) error {

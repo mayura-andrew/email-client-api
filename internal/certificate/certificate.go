@@ -36,18 +36,24 @@ type Config struct {
 	NameX    float64
 	NameY    float64
 	NameSize float64
+	// The certificate number is placed by its baseline, in mm from the
+	// bottom-left corner of the page.
+	NumberX    float64
+	NumberY    float64
+	NumberSize float64
 }
 
-func Generate(studentName string, cfg Config) ([]byte, string, error) {
+// Generate renders one certificate. An empty number leaves the number off.
+func Generate(studentName, number string, cfg Config) ([]byte, string, error) {
 	if len(cfg.Template.Content) == 0 {
 		return nil, "", errors.New("certificate template is not configured")
 	}
 	var content []byte
 	var err error
 	if cfg.Template.IsPDF() {
-		content, err = generateFromPDF(studentName, cfg)
+		content, err = generateFromPDF(studentName, number, cfg)
 	} else {
-		content, err = generateFromJPG(studentName, cfg)
+		content, err = generateFromJPG(studentName, number, cfg)
 	}
 	if err != nil {
 		return nil, "", err
@@ -55,7 +61,7 @@ func Generate(studentName string, cfg Config) ([]byte, string, error) {
 	return content, fmt.Sprintf("certificate-%s.pdf", safeFilename(studentName)), nil
 }
 
-func generateFromJPG(studentName string, cfg Config) ([]byte, error) {
+func generateFromJPG(studentName, number string, cfg Config) ([]byte, error) {
 	pdf := gofpdf.New("L", "mm", "A4", "")
 	options := gofpdf.ImageOptions{ImageType: "JPG"}
 	pdf.RegisterImageOptionsReader("template", options, bytes.NewReader(cfg.Template.Content))
@@ -65,6 +71,10 @@ func generateFromJPG(studentName string, cfg Config) ([]byte, error) {
 	pdf.SetTextColor(25, 45, 80)
 	pdf.SetXY(cfg.NameX, cfg.NameY)
 	pdf.CellFormat(297-cfg.NameX, 10, studentName, "", 0, "C", false, 0, "")
+	if number != "" {
+		pdf.SetFont("Helvetica", "", cfg.NumberSize)
+		pdf.Text(cfg.NumberX, 210-cfg.NumberY, number)
+	}
 	var buf bytes.Buffer
 	if err := pdf.Output(&buf); err != nil {
 		return nil, err
@@ -72,16 +82,24 @@ func generateFromJPG(studentName string, cfg Config) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func generateFromPDF(studentName string, cfg Config) ([]byte, error) {
+func generateFromPDF(studentName, number string, cfg Config) ([]byte, error) {
 	offsetY := 105 - cfg.NameY
-	desc := fmt.Sprintf("font:Helvetica, points:%d, scale:1 abs, pos:c, off:%.2f %.2f, rot:0",
-		int(cfg.NameSize), cfg.NameX, offsetY)
-	watermark, err := api.TextWatermark(studentName, desc, true, false, types.MILLIMETRES)
+	content, err := stamp(cfg.Template.Content, studentName, fmt.Sprintf("font:Helvetica, points:%d, scale:1 abs, pos:c, off:%.2f %.2f, rot:0",
+		int(cfg.NameSize), cfg.NameX, offsetY))
+	if err != nil || number == "" {
+		return content, err
+	}
+	return stamp(content, number, fmt.Sprintf("font:Helvetica, points:%d, scale:1 abs, pos:bl, off:%.2f %.2f, rot:0",
+		int(cfg.NumberSize), cfg.NumberX, cfg.NumberY))
+}
+
+func stamp(pdf []byte, text, desc string) ([]byte, error) {
+	watermark, err := api.TextWatermark(text, desc, true, false, types.MILLIMETRES)
 	if err != nil {
 		return nil, err
 	}
 	var buf bytes.Buffer
-	if err := api.AddWatermarks(bytes.NewReader(cfg.Template.Content), &buf, nil, watermark, model.NewDefaultConfiguration()); err != nil {
+	if err := api.AddWatermarks(bytes.NewReader(pdf), &buf, nil, watermark, model.NewDefaultConfiguration()); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil

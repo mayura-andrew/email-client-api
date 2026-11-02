@@ -42,7 +42,7 @@ export type Campaign = {
   breakdown?: Record<string, number>;
 };
 
-export type Recipient = { id: number; studentName: string; email: string; status: string; errorMessage?: string };
+export type Recipient = { id: number; studentName: string; certificateNumber: string; email: string; status: string; errorMessage?: string };
 
 export type PageMeta = { page: number; pageSize: number; total: number };
 
@@ -65,6 +65,6 @@ export type DeliveryStatus = {
 
 export type Settings = {
   smtp: { host: string; port: number; username: string; sender: string; configured: boolean };
-  certificate: { template: string; nameX: number; nameY: number; nameSize: number };
+  certificate: { template: string; nameX: number; nameY: number; nameSize: number; numberX: number; numberY: number; numberSize: number };
   delivery: { workersPerReplica: number; ratePerSecond: number; dailyLimit: number; maxAttempts: number };
 };

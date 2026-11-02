@@ -39,6 +39,6 @@ export function initials(name: string): string {
 }
 
 /** Replaces the template tokens exactly like the delivery worker does. */
-export function personalize(template: string, name: string, email: string): string {
-  return template.replaceAll("{{student_name}}", name).replaceAll("{{email}}", email);
+export function personalize(template: string, name: string, email: string, number = ""): string {
+  return template.replaceAll("{{student_name}}", name).replaceAll("{{email}}", email).replaceAll("{{certificate_number}}", number);
 }

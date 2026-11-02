@@ -13,8 +13,8 @@ import { etaSeconds } from "@/lib/eta";
 import { formatDuration, formatNumber, initials, personalize } from "@/lib/format";
 
 // Columns used when there is no CSV and every student was added by hand.
-const MANUAL_TABLE = [["Student name", "Email"]];
-const MANUAL_MAPPING: Mapping = { name: 0, email: 1 };
+const MANUAL_TABLE = [["Student name", "Email", "Certificate number"]];
+const MANUAL_MAPPING: Mapping = { name: 0, email: 1, number: 2 };
 
 const STEPS = ["Audience", "Message", "Certificate", "Review & send"] as const;
 const DEFAULT_BODY = "Hello {{student_name}},\n\nCongratulations on completing the program! Your certificate is attached to this email.\n\nWarm regards,\nThe AI4ALL Team";
@@ -27,7 +27,7 @@ export default function NewCampaignPage() {
   const [step, setStep] = useState(0);
   const [file, setFile] = useState<File | null>(null);
   const [table, setTable] = useState<string[][] | null>(null);
-  const [mapping, setMapping] = useState<Mapping>({ name: -1, email: -1 });
+  const [mapping, setMapping] = useState<Mapping>({ name: -1, email: -1, number: -1 });
   // Email corrections the admin accepted, keyed by file line number.
   const [fixes, setFixes] = useState<Record<number, string>>({});
   // Students typed or pasted in by hand, with or without a CSV.
@@ -43,7 +43,7 @@ export default function NewCampaignPage() {
   const sent = useRef(false);
 
   const valid = audience?.valid ?? [];
-  const recipient = valid[sample] ?? { name: "Student Name", email: "student@example.com", line: 0 };
+  const recipient = valid[sample] ?? { name: "Student Name", email: "student@example.com", number: "", line: 0 };
   const canContinue = [valid.length > 0, !!form.name.trim() && !!form.subject.trim() && !!form.body.trim(), true, true][step];
 
   // Leaving with an imported audience would silently lose the work.
@@ -53,7 +53,7 @@ export default function NewCampaignPage() {
     return () => window.removeEventListener("beforeunload", warn);
   }, [file, manual.length]);
 
-  function addManual(entries: { name: string; email: string }[]) {
+  function addManual(entries: { name: string; email: string; number?: string }[]) {
     setManual(current => [...current, ...entries.map(entry => ({ ...entry, id: nextManualId.current++ }))]);
   }
 
@@ -174,7 +174,7 @@ export default function NewCampaignPage() {
 function AudienceStep({ file, audience, onFile, onRemoveFile, onMapping, onFix, manualCount, onAdd, onRemove }: {
   file: File | null; audience: Audience | null; onFile: (file: File) => void; onRemoveFile: () => void;
   onMapping: (mapping: Mapping) => void; onFix: (fixes: Record<number, string>) => void;
-  manualCount: number; onAdd: (entries: { name: string; email: string }[]) => void; onRemove: (id: number) => void;
+  manualCount: number; onAdd: (entries: { name: string; email: string; number?: string }[]) => void; onRemove: (id: number) => void;
 }) {
   const existing = useMemo(() => new Set(audience?.rows.map(row => row.email).filter(Boolean)), [audience]);
   if (!audience) {
@@ -223,7 +223,7 @@ function AudienceStep({ file, audience, onFile, onRemoveFile, onMapping, onFix, 
 }
 
 /** Single entry form plus a "paste a list" mode for several people at once. */
-function ManualEntryPanel({ existing, onAdd, autoFocus }: { existing: Set<string>; onAdd: (entries: { name: string; email: string }[]) => void; autoFocus: boolean }) {
+function ManualEntryPanel({ existing, onAdd, autoFocus }: { existing: Set<string>; onAdd: (entries: { name: string; email: string; number?: string }[]) => void; autoFocus: boolean }) {
   const [mode, setMode] = useState<"one" | "paste">("one");
   const [pasted, setPasted] = useState("");
   const parsed = useMemo(() => parsePastedList(pasted), [pasted]);
@@ -235,7 +235,7 @@ function ManualEntryPanel({ existing, onAdd, autoFocus }: { existing: Set<string
         <button type="button" className={mode === "paste" ? "is-active" : ""} onClick={() => setMode("paste")}>Paste a list</button>
       </div>
       {mode === "one" ? (
-        <RecipientForm existing={existing} autoFocus={autoFocus} onAdd={(name, email) => onAdd([{ name, email }])} />
+        <RecipientForm existing={existing} autoFocus={autoFocus} onAdd={(name, email, number) => onAdd([{ name, email, number }])} />
       ) : (
         <div className="paste-list">
           <textarea rows={6} value={pasted} onChange={e => setPasted(e.target.value)}
@@ -266,7 +266,7 @@ function RecipientSwitcher({ sample, setSample, count, name }: { sample: number;
 
 function MessageStep({ form, setForm, recipient, sample, setSample, count }: {
   form: { name: string; subject: string; body: string }; setForm: (f: { name: string; subject: string; body: string }) => void;
-  recipient: { name: string; email: string }; sample: number; setSample: (n: number) => void; count: number;
+  recipient: { name: string; email: string; number: string }; sample: number; setSample: (n: number) => void; count: number;
 }) {
   const body = useRef<HTMLTextAreaElement>(null);
   function insert(token: string) {
@@ -293,16 +293,17 @@ function MessageStep({ form, setForm, recipient, sample, setSample, count }: {
           <span className="muted small">Insert</span>
           <button type="button" onClick={() => insert("{{student_name}}")}>student name</button>
           <button type="button" onClick={() => insert("{{email}}")}>email</button>
+          <button type="button" onClick={() => insert("{{certificate_number}}")}>certificate number</button>
         </div>
       </section>
       <section className="mail-preview">
         <RecipientSwitcher sample={sample} setSample={setSample} count={count} name={recipient.name} />
         <div className="mail">
           <div className="mail-head">
-            <div className="mail-subject">{personalize(form.subject, recipient.name, recipient.email) || <span className="muted">No subject</span>}</div>
+            <div className="mail-subject">{personalize(form.subject, recipient.name, recipient.email, recipient.number) || <span className="muted">No subject</span>}</div>
             <div className="mail-meta"><span className="avatar sm">AI</span><div><strong>AI4ALL</strong><span>to {recipient.email}</span></div></div>
           </div>
-          <div className="mail-body">{personalize(form.body, recipient.name, recipient.email)}</div>
+          <div className="mail-body">{personalize(form.body, recipient.name, recipient.email, recipient.number)}</div>
           <div className="mail-attachment"><Icon name="paperclip" size={15} /><span>{certificateName}</span><small>PDF</small></div>
         </div>
       </section>
@@ -311,7 +312,7 @@ function MessageStep({ form, setForm, recipient, sample, setSample, count }: {
 }
 
 function CertificateStep({ recipient, sample, setSample, count }: {
-  recipient: { name: string }; sample: number; setSample: (n: number) => void; count: number;
+  recipient: { name: string; number: string }; sample: number; setSample: (n: number) => void; count: number;
 }) {
   const [url, setUrl] = useState("");
   const [loading, setLoading] = useState(true);
@@ -321,13 +322,13 @@ function CertificateStep({ recipient, sample, setSample, count }: {
     let cancelled = false;
     setLoading(true); setError("");
     const timer = window.setTimeout(() => {
-      api<Blob>(`/api/v1/certificate/preview?student_name=${encodeURIComponent(recipient.name)}`)
+      api<Blob>(`/api/v1/certificate/preview?student_name=${encodeURIComponent(recipient.name)}&certificate_number=${encodeURIComponent(recipient.number)}`)
         .then(blob => { if (cancelled) return; objectUrl = URL.createObjectURL(blob); setUrl(objectUrl); })
         .catch(err => !cancelled && setError((err as Error).message))
         .finally(() => !cancelled && setLoading(false));
     }, 200);
     return () => { cancelled = true; window.clearTimeout(timer); if (objectUrl) URL.revokeObjectURL(objectUrl); };
-  }, [recipient.name]);
+  }, [recipient.name, recipient.number]);
   return (
     <section className="panel certificate-step">
       <div className="panel-head">
@@ -346,7 +347,7 @@ function CertificateStep({ recipient, sample, setSample, count }: {
 }
 
 function ReviewStep({ form, audience, recipient, delivery }: {
-  form: { name: string; subject: string }; audience: Audience; recipient: { name: string; email: string };
+  form: { name: string; subject: string }; audience: Audience; recipient: { name: string; email: string; number: string };
   delivery: ReturnType<typeof useDelivery>["data"];
 }) {
   const count = audience.valid.length;
@@ -365,7 +366,7 @@ function ReviewStep({ form, audience, recipient, delivery }: {
         <h2>Summary</h2>
         <dl className="summary">
           <div><dt>Campaign</dt><dd>{form.name}</dd></div>
-          <div><dt>Subject</dt><dd>{personalize(form.subject, recipient.name, recipient.email)}</dd></div>
+          <div><dt>Subject</dt><dd>{personalize(form.subject, recipient.name, recipient.email, recipient.number)}</dd></div>
           <div><dt>Recipients</dt><dd className="tabular">{formatNumber(count)}</dd></div>
           <div><dt>Attachment</dt><dd>Personalized PDF certificate</dd></div>
           <div><dt>Estimated time</dt><dd>{isFinite(eta) ? formatDuration(eta) : "Depends on SMTP speed"}{delivery?.limits.ratePerSecond ? <span className="muted small"> · limited to {delivery.limits.ratePerSecond}/s</span> : null}</dd></div>
