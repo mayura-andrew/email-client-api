@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"errors"
@@ -46,7 +46,7 @@ func (app *application) sendEmailHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	ids, err := app.models.Emails.Queue(r.Context(), email, app.config.delivery.maxAttempts)
+	ids, err := app.models.Emails.Queue(r.Context(), email, app.config.delivery.MaxAttempts)
 	if err != nil {
 		app.serverErrorRespone(w, r, err)
 		return

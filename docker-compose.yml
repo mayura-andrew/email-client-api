@@ -1,3 +1,7 @@
+# Local services for developing the desktop app. The app itself is not
+# containerised: point it (or `make run/dev`) at these.
+#   PostgreSQL: postgres://user:password@localhost:5434/emailclient?sslmode=disable
+#   Redis:      redis://localhost:6380/0
 services:
   db:
     image: postgres:16-alpine
@@ -17,8 +21,6 @@ services:
 
   redis:
     image: redis:7.4-alpine
-    # AOF keeps rate-limit, quota and session state across restarts; the outbox
-    # itself is recoverable from PostgreSQL even if Redis data is lost.
     command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
     volumes:
       - redis_data:/data
@@ -30,75 +32,14 @@ services:
       timeout: 5s
       retries: 5
 
-  # Local SMTP catcher for development: UI on http://localhost:8025.
-  # Start it with: docker compose --profile dev up
+  # Local SMTP catcher: SMTP localhost:1025, UI http://localhost:8025.
+  # Start it with: docker compose --profile dev up -d mailpit
   mailpit:
     image: axllent/mailpit:v1.21
     profiles: ["dev"]
     ports:
       - "8025:8025"
       - "1025:1025"
-
-  api:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    environment:
-      DB_DSN: postgres://user:password@db:5432/emailclient?sslmode=disable
-      REDIS_URL: redis://redis:6379/0
-      SMTPPORT: ${SMTPPORT:-587}
-      SMTPSENDER: ${SMTPSENDER}
-      SMTPHOST: ${SMTPHOST}
-      SMTPUSERNAME: ${SMTPUSERNAME}
-      SMTPPASS: ${SMTPPASS}
-      URL: ${URL}
-      TRACKING_REDIRECT_URL: ${TRACKING_REDIRECT_URL:-}
-      CORS_TRUSTED_ORIGINS: ${CORS_TRUSTED_ORIGINS:-http://localhost:3000 http://localhost:5173}
-      ADMIN_EMAIL: ${ADMIN_EMAIL}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
-      ADMIN_SESSION_SECRET: ${ADMIN_SESSION_SECRET}
-      CERTIFICATE_TEMPLATE: ${CERTIFICATE_TEMPLATE:-./assests/template.jpg}
-      CERTIFICATE_NAME_X: ${CERTIFICATE_NAME_X:-0}
-      CERTIFICATE_NAME_Y: ${CERTIFICATE_NAME_Y:-60}
-      CERTIFICATE_NAME_SIZE: ${CERTIFICATE_NAME_SIZE:-24}
-      CERTIFICATE_NUMBER_X: ${CERTIFICATE_NUMBER_X:-15}
-      CERTIFICATE_NUMBER_Y: ${CERTIFICATE_NUMBER_Y:-15}
-      CERTIFICATE_NUMBER_SIZE: ${CERTIFICATE_NUMBER_SIZE:-10}
-      COOKIE_SECURE: ${COOKIE_SECURE:-false}
-      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
-      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-4}
-      SMTP_RATE_PER_SECOND: ${SMTP_RATE_PER_SECOND:-2}
-      SMTP_DAILY_LIMIT: ${SMTP_DAILY_LIMIT:-0}
-      OUTBOX_MAX_ATTEMPTS: ${OUTBOX_MAX_ATTEMPTS:-5}
-    ports:
-      - "4000:4000"
-    volumes:
-      - ./assests:/app/assests
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:4000/api/v1/healthcheck"]
-      interval: 15s
-      timeout: 5s
-      retries: 3
-    # Workers finish in-flight sends on SIGTERM; give them the outbox lease.
-    stop_grace_period: 2m30s
-    restart: unless-stopped
-
-  web:
-    build:
-      context: ./web
-      dockerfile: Dockerfile
-    environment:
-      NEXT_PUBLIC_API_URL: http://localhost:4000
-    ports:
-      - "3000:3000"
-    depends_on:
-      - api
-    restart: unless-stopped
 
 volumes:
   db_data:

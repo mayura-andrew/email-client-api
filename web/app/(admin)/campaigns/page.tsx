@@ -79,7 +79,7 @@ export default function CampaignsPage() {
             </thead>
             <tbody>
               {visible.map(c => (
-                <tr key={c.id} onClick={() => router.push(`/campaigns/${c.id}`)}>
+                <tr key={c.id} onClick={() => router.push(`/campaigns/view?id=${c.id}`)}>
                   <td><strong>{c.name}</strong><small>{c.subject}</small></td>
                   <td><StatusBadge status={c.status} /></td>
                   <td>

@@ -1,5 +1,5 @@
 // Package settings owns runtime configuration that admins can change while the
-// service runs (SMTP credentials, certificate template). Readers get an
+// app runs (SMTP credentials, certificate template). Readers get an
 // immutable snapshot through an atomic pointer, so HTTP handlers and worker
 // goroutines never race. Changes are written to PostgreSQL and broadcast over
 // Redis pub/sub so every replica reloads the same values.
@@ -8,8 +8,6 @@ package settings
 import (
 	"context"
 	"errors"
-	"os"
-	"path/filepath"
 	"sync/atomic"
 	"time"
 
@@ -36,17 +34,17 @@ type Store struct {
 	redis  *redis.Client
 	secret []byte
 	logger Logger
-	// defaults come from the environment and apply until an admin saves settings.
-	defaultSMTP         mailer.Config
-	defaultCertificate  certificate.Config
-	defaultTemplatePath string
-	current             atomic.Pointer[Snapshot]
+	// defaults apply until an admin saves settings; defaultCertificate carries
+	// the bundled template.
+	defaultSMTP        mailer.Config
+	defaultCertificate certificate.Config
+	current            atomic.Pointer[Snapshot]
 }
 
 func New(model data.SettingsModel, rdb *redis.Client, secret []byte, logger Logger,
-	defaultSMTP mailer.Config, defaultCertificate certificate.Config, defaultTemplatePath string) *Store {
+	defaultSMTP mailer.Config, defaultCertificate certificate.Config) *Store {
 	s := &Store{model: model, redis: rdb, secret: secret, logger: logger,
-		defaultSMTP: defaultSMTP, defaultCertificate: defaultCertificate, defaultTemplatePath: defaultTemplatePath}
+		defaultSMTP: defaultSMTP, defaultCertificate: defaultCertificate}
 	s.current.Store(&Snapshot{SMTP: defaultSMTP, Certificate: defaultCertificate})
 	return s
 }
@@ -76,31 +74,12 @@ func (s *Store) Reload(ctx context.Context) error {
 	case err == nil:
 		next.Certificate.Template = certificate.Template{Filename: template.Filename, Content: template.Content}
 	case errors.Is(err, data.ErrRecordNotFound):
-		next.Certificate.Template = s.loadTemplateFile()
 	default:
 		return err
 	}
 
 	s.current.Store(&next)
 	return nil
-}
-
-// loadTemplateFile reads the bundled template, preferring an admin upload left
-// on disk by earlier versions that stored templates on the local volume.
-func (s *Store) loadTemplateFile() certificate.Template {
-	if s.defaultTemplatePath == "" {
-		return certificate.Template{}
-	}
-	paths := []string{}
-	for _, extension := range []string{".pdf", ".jpg", ".jpeg"} {
-		paths = append(paths, filepath.Join(filepath.Dir(s.defaultTemplatePath), "admin-template"+extension))
-	}
-	for _, path := range append(paths, s.defaultTemplatePath) {
-		if content, err := os.ReadFile(path); err == nil {
-			return certificate.Template{Filename: filepath.Base(path), Content: content}
-		}
-	}
-	return certificate.Template{}
 }
 
 func (s *Store) SaveSMTP(ctx context.Context, cfg mailer.Config) error {

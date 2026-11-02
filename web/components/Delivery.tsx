@@ -97,7 +97,7 @@ export function ActivityFeed({ events, now }: { events: DeliveryEvent[]; now: nu
               <span className="muted">{eventVerb[event.status]}</span> <strong>{event.name || event.recipient}</strong>
             </div>
             <div className="feed-meta">
-              {event.campaignId ? <Link href={`/campaigns/${event.campaignId}`}>{event.campaignName}</Link> : <span>One-off email</span>}
+              {event.campaignId ? <Link href={`/campaigns/view?id=${event.campaignId}`}>{event.campaignName}</Link> : <span>One-off email</span>}
               {event.attempts > 1 && <span> · attempt {event.attempts}</span>}
               {event.error && (event.status === "failed" || event.status === "retrying") && <span className="feed-error" title={event.error}> · {event.error}</span>}
             </div>

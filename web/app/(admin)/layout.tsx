@@ -7,7 +7,7 @@ import { DeliveryProvider, useDelivery } from "@/components/DeliveryContext";
 import { Icon, IconName } from "@/components/Icon";
 import { ToastProvider } from "@/components/Toast";
 import { LiveDot } from "@/components/ui";
-import { api } from "@/lib/api";
+import { api, sessionToken } from "@/lib/api";
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
@@ -30,6 +30,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         <div className="shell">
           <Sidebar pathname={pathname} onLogout={async () => {
             await api("/api/v1/auth/logout", { method: "POST" }).catch(() => undefined);
+            sessionToken.clear();
             router.replace("/login");
           }} />
           <main className="workspace" key={pathname}>{children}</main>

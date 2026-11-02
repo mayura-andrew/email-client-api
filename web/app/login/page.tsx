@@ -4,7 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, Suspense, useEffect, useState } from "react";
 import { Icon } from "@/components/Icon";
 import { Button } from "@/components/ui";
-import { api, json } from "@/lib/api";
+import { api, json, sessionToken } from "@/lib/api";
 
 export default function LoginPage() {
   return <Suspense><Login /></Suspense>;
@@ -27,7 +27,8 @@ function Login() {
     event.preventDefault();
     setBusy(true); setError("");
     try {
-      await api("/api/v1/auth/login", { method: "POST", body: json(credentials) });
+      const { token } = await api<{ token: string }>("/api/v1/auth/login", { method: "POST", body: json(credentials) });
+      sessionToken.set(token);
       router.replace(next.startsWith("/") ? next : "/");
     } catch (err) {
       const status = (err as { status?: number }).status;

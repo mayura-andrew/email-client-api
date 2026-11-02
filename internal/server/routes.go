@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"expvar"
@@ -16,7 +16,6 @@ func (app *application) routes() http.Handler {
 	admin := func(h http.HandlerFunc) http.Handler { return app.requireAdmin(h) }
 
 	// Public
-	router.HandlerFunc(http.MethodGet, "/", app.rootHandler)
 	router.HandlerFunc(http.MethodGet, "/api/v1/healthcheck", app.healthcheckHandler)
 	router.HandlerFunc(http.MethodGet, "/api/v1/redirect", app.track)
 	router.HandlerFunc(http.MethodPost, "/api/v1/auth/login", app.loginHandler)
@@ -49,5 +48,7 @@ func (app *application) routes() http.Handler {
 	router.Handler(http.MethodPost, "/api/v1/certificate/template", admin(app.uploadCertificateTemplateHandler))
 	router.Handler(http.MethodPost, "/api/v1/certificate/template/preview", admin(app.previewTemplateUploadHandler))
 
-	return app.recoverPanic(app.enableCORS(app.rateLimit(router)))
+	// The UI is served from the same origin inside the desktop window, so there
+	// is no CORS, and a single local user needs no general rate limit.
+	return app.recoverPanic(router)
 }

@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"bytes"
@@ -48,10 +48,10 @@ func (app *application) settingsHandler(w http.ResponseWriter, r *http.Request) 
 			"numberSize": snapshot.Certificate.NumberSize,
 		},
 		"delivery": envelop{
-			"workersPerReplica": app.config.delivery.workers,
-			"ratePerSecond":     app.config.delivery.ratePerSecond,
-			"dailyLimit":        app.config.delivery.dailyLimit,
-			"maxAttempts":       app.config.delivery.maxAttempts,
+			"workersPerReplica": app.config.delivery.Workers,
+			"ratePerSecond":     app.config.delivery.RatePerSecond,
+			"dailyLimit":        app.config.delivery.DailyLimit,
+			"maxAttempts":       app.config.delivery.MaxAttempts,
 		},
 	}, nil)
 }

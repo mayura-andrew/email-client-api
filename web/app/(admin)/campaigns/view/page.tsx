@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
 import { useDelivery } from "@/components/DeliveryContext";
 import { Icon } from "@/components/Icon";
 import { RecipientForm } from "@/components/RecipientForm";
@@ -25,8 +25,14 @@ const STATES = [
 
 const PAGE_SIZE = 100;
 
+// The UI is exported as static files, so the id is a query parameter rather
+// than a dynamic route segment: /campaigns/view?id=42.
 export default function CampaignPage() {
-  const id = Number(useParams<{ id: string }>().id);
+  return <Suspense><CampaignDetail /></Suspense>;
+}
+
+function CampaignDetail() {
+  const id = Number(useSearchParams().get("id"));
   const toast = useToast();
   const { data: delivery } = useDelivery();
   const now = useNow();

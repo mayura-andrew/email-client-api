@@ -83,7 +83,7 @@ export default function OverviewPage() {
             {active.map(campaign => {
               const remaining = campaign.validCount - campaign.sentCount - campaign.failedCount;
               return (
-                <Link key={campaign.id} href={`/campaigns/${campaign.id}`} className="active-row">
+                <Link key={campaign.id} href={`/campaigns/view?id=${campaign.id}`} className="active-row">
                   <div className="active-name">
                     <strong>{campaign.name}</strong>
                     <StatusBadge status={campaign.status} />

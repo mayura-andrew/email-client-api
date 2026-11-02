@@ -35,3 +35,10 @@ web/*.tsbuildinfo
 
 .envrc
 /.envrc
+.devdata/
+
+# Desktop build output
+web/out/
+web/wailsjs/
+build/bin/
+web/package.json.md5

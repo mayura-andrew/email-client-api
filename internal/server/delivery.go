@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"net/http"
@@ -40,13 +40,13 @@ func (app *application) deliveryStatusHandler(w http.ResponseWriter, r *http.Req
 		"nextRetry":  stats.NextRetry,
 		"workers": envelop{
 			"online":     workersOnline,
-			"perReplica": app.config.delivery.workers,
+			"perReplica": app.config.delivery.Workers,
 		},
 		"limits": envelop{
-			"ratePerSecond": app.config.delivery.ratePerSecond,
-			"dailyLimit":    app.config.delivery.dailyLimit,
+			"ratePerSecond": app.config.delivery.RatePerSecond,
+			"dailyLimit":    app.config.delivery.DailyLimit,
 			"dailyUsed":     quotaUsed,
-			"maxAttempts":   app.config.delivery.maxAttempts,
+			"maxAttempts":   app.config.delivery.MaxAttempts,
 		},
 		"smtpConfigured": app.settings.Current().SMTP.Configured(),
 		"serverTime":     time.Now().UTC(),

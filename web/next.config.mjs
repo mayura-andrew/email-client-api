@@ -1,18 +1,13 @@
-// The web and API services run on different hostnames in production, which
-// browsers treat as different sites, so the admin session cookie would not be
-// sent. With API_PROXY_URL set, Next forwards /api/* to the API and the browser
-// only ever talks to one origin.
-const apiProxy = process.env.API_PROXY_URL?.replace(/\/+$/, "");
+// The desktop app embeds the UI as static files (see main.go). In development,
+// `bun run dev` proxies /api to `go run ./cmd/devserver`.
+const dev = process.env.NODE_ENV !== "production";
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  ...(apiProxy && {
-    env: { NEXT_PUBLIC_API_URL: "" },
-    async rewrites() {
-      return [{ source: "/api/:path*", destination: `${apiProxy}/api/:path*` }];
-    },
-  }),
+  ...(dev
+    ? { async rewrites() { return [{ source: "/api/:path*", destination: "http://127.0.0.1:4000/api/:path*" }]; } }
+    : { output: "export" }),
 };
 
 export default nextConfig;

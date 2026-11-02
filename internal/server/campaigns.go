@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"encoding/csv"
@@ -204,7 +204,7 @@ func (app *application) addRecipientHandler(w http.ResponseWriter, r *http.Reque
 		app.failedValidationResponse(w, r, map[string]string{"certificateNumber": "Certificate number is too long"})
 		return
 	}
-	recipient, queued, err := app.models.Campaigns.AddRecipient(r.Context(), campaignID, name, email, number, app.config.delivery.maxAttempts)
+	recipient, queued, err := app.models.Campaigns.AddRecipient(r.Context(), campaignID, name, email, number, app.config.delivery.MaxAttempts)
 	switch {
 	case errors.Is(err, data.ErrRecordNotFound):
 		app.notFoundResponse(w, r)
@@ -228,7 +228,7 @@ func (app *application) startCampaignHandler(w http.ResponseWriter, r *http.Requ
 		app.badRequestResponse(w, r, err)
 		return
 	}
-	queued, err := app.models.Campaigns.Start(r.Context(), campaignID, app.config.delivery.maxAttempts)
+	queued, err := app.models.Campaigns.Start(r.Context(), campaignID, app.config.delivery.MaxAttempts)
 	if err != nil {
 		if errors.Is(err, data.ErrRecordNotFound) {
 			app.errorResponse(w, r, http.StatusConflict, "campaign is not ready to start")

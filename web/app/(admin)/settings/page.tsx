@@ -6,11 +6,16 @@ import { Icon } from "@/components/Icon";
 import { useToast } from "@/components/Toast";
 import { Button, Dropzone, Skeleton, Spinner } from "@/components/ui";
 import { api, json, Settings } from "@/lib/api";
+import { Connections, saveSetup, SetupError, SetupRequest, waitUntilStarted } from "@/lib/setup";
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<Settings | null>(null);
+  const [connections, setConnections] = useState<Connections | null>(null);
   const load = () => api<Settings>("/api/v1/settings").then(setSettings);
-  useEffect(() => { load().catch(() => undefined); }, []);
+  useEffect(() => {
+    load().catch(() => undefined);
+    api<Connections>("/api/v1/setup/connections").then(setConnections).catch(() => undefined);
+  }, []);
   return (
     <div className="page">
       <header className="page-header">
@@ -21,9 +26,13 @@ export default function SettingsPage() {
       </header>
       <div className="settings-layout">
         {settings ? <SmtpCard settings={settings} onSaved={load} /> : <section className="panel"><Skeleton height={380} radius={12} /></section>}
-        <DeliveryCard />
+        {connections ? <DeliveryCard connections={connections} /> : <section className="panel"><Skeleton height={240} radius={12} /></section>}
       </div>
       {settings ? <TemplateCard settings={settings} onSaved={load} /> : <section className="panel"><Skeleton height={320} radius={12} /></section>}
+      {connections && <div className="settings-layout">
+        <ConnectionsCard connections={connections} />
+        <AdminCard connections={connections} />
+      </div>}
     </div>
   );
 }
@@ -46,7 +55,7 @@ function SmtpCard({ settings, onSaved }: { settings: Settings; onSaved: () => Pr
       await api("/api/v1/settings/smtp", { method: "PUT", body: json({ ...form, port: Number(form.port) }) });
       setForm(f => ({ ...f, password: "" }));
       await onSaved();
-      toast("success", "SMTP settings saved", "Every replica picks up the change immediately.");
+      toast("success", "SMTP settings saved", "New emails use them right away.");
     } catch (err) { toast("error", "Could not save SMTP settings", (err as Error).message); }
     finally { setSaving(false); }
   }
@@ -215,21 +224,121 @@ function TemplateCard({ settings, onSaved }: { settings: Settings; onSaved: () =
   );
 }
 
-function DeliveryCard() {
+/**
+ * Saves connection-level settings. The backend restarts to apply them, so this
+ * waits for it and reloads; a new Redis means a new session, hence the login.
+ */
+function useSetupSave() {
+  const toast = useToast();
+  const [saving, setSaving] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  async function save(body: SetupRequest, done: string) {
+    setSaving(true); setErrors({});
+    try {
+      await saveSetup(body);
+      const status = await waitUntilStarted();
+      if (status.state !== "running") { window.location.replace("/setup"); return; }
+      toast("success", done);
+      window.setTimeout(() => window.location.reload(), 600);
+    } catch (err) {
+      if (err instanceof SetupError) setErrors(err.fields);
+      else toast("error", "Could not save", (err as Error).message);
+      setSaving(false);
+    }
+  }
+  return { save, saving, errors };
+}
+
+function DeliveryCard({ connections }: { connections: Connections }) {
   const { data } = useDelivery();
-  const rows = data ? [
-    { label: "Send rate", value: data.limits.ratePerSecond ? `${data.limits.ratePerSecond} per second` : "Unlimited" },
-    { label: "Daily limit", value: data.limits.dailyLimit ? `${data.limits.dailyLimit.toLocaleString()} per day` : "Unlimited" },
-    { label: "Attempts per email", value: String(data.limits.maxAttempts) },
-    { label: "Workers online", value: `${data.workers.online} (${data.workers.perReplica} per replica)` },
-  ] : [];
+  const { save, saving, errors } = useSetupSave();
+  const [form, setForm] = useState({ rate: String(connections.smtpRatePerSecond), daily: String(connections.smtpDailyLimit) });
+  const dirty = Number(form.rate) !== connections.smtpRatePerSecond || Number(form.daily) !== connections.smtpDailyLimit;
   return (
     <section className="panel">
-      <div className="panel-head"><div><h2>Delivery limits</h2><p className="muted small">Shared by every replica. Change them with environment variables such as <code>SMTP_DAILY_LIMIT</code>.</p></div></div>
+      <div className="panel-head"><div><h2>Delivery limits</h2><p className="muted small">Set these to your email provider&apos;s limits (Gmail: 500 a day, Brevo free: 300 a day). 0 means unlimited.</p></div></div>
+      <form className="form-grid" onSubmit={event => { event.preventDefault(); save({ smtpRatePerSecond: Number(form.rate), smtpDailyLimit: Number(form.daily) }, "Delivery limits saved"); }}>
+        <label className={`field ${errors.smtpRatePerSecond ? "has-error" : ""}`}>Emails per second
+          <input type="number" min={0} step="0.1" value={form.rate} onChange={e => setForm({ ...form, rate: e.target.value })} />
+          {errors.smtpRatePerSecond && <span className="field-error">{errors.smtpRatePerSecond}</span>}
+        </label>
+        <label className={`field ${errors.smtpDailyLimit ? "has-error" : ""}`}>Emails per day
+          <input type="number" min={0} step="1" value={form.daily} onChange={e => setForm({ ...form, daily: e.target.value })} />
+          {errors.smtpDailyLimit && <span className="field-error">{errors.smtpDailyLimit}</span>}
+        </label>
+        <div className="span-3 form-actions"><Button type="submit" loading={saving} disabled={!dirty}>Save limits</Button></div>
+      </form>
       <dl className="summary">
-        {data ? rows.map(row => <div key={row.label}><dt>{row.label}</dt><dd>{row.value}</dd></div>)
-          : [0, 1, 2, 3].map(i => <div key={i}><dt><Skeleton width={90} /></dt><dd><Skeleton width={120} /></dd></div>)}
+        <div><dt>Attempts per email</dt><dd>{data ? data.limits.maxAttempts : <Skeleton width={40} />}</dd></div>
+        <div><dt>Workers online</dt><dd>{data ? data.workers.online : <Skeleton width={40} />}</dd></div>
       </dl>
+    </section>
+  );
+}
+
+function ConnectionsCard({ connections }: { connections: Connections }) {
+  const { save, saving, errors } = useSetupSave();
+  const [form, setForm] = useState({ databaseUrl: "", redisUrl: "" });
+  const [revealed, setRevealed] = useState(false);
+  const [copied, setCopied] = useState(false);
+  async function copy() {
+    await navigator.clipboard.writeText(connections.secret).catch(() => undefined);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1500);
+  }
+  return (
+    <section className="panel">
+      <div className="panel-head"><div><h2>Connections</h2><p className="muted small">Stored on this computer in <code>{connections.configDir}</code>. Saving reconnects the app; sending pauses for a few seconds.</p></div></div>
+      <form onSubmit={event => { event.preventDefault(); save(form, "Connections saved"); }}>
+        <label className={`field ${errors.databaseUrl ? "has-error" : ""}`}><span className="field-label">PostgreSQL URL</span>
+          <input value={form.databaseUrl} spellCheck={false} placeholder={connections.databaseUrl} onChange={e => setForm({ ...form, databaseUrl: e.target.value })} />
+          {errors.databaseUrl ? <span className="field-error">{errors.databaseUrl}</span> : <span className="field-note">Leave blank to keep the current connection.</span>}
+        </label>
+        <label className={`field ${errors.redisUrl ? "has-error" : ""}`}><span className="field-label">Redis URL</span>
+          <input value={form.redisUrl} spellCheck={false} placeholder={connections.redisUrl} onChange={e => setForm({ ...form, redisUrl: e.target.value })} />
+          {errors.redisUrl ? <span className="field-error">{errors.redisUrl}</span> : <span className="field-note">Changing Redis signs you out.</span>}
+        </label>
+        <div className="form-actions"><Button type="submit" loading={saving} disabled={!form.databaseUrl && !form.redisUrl}>Save and reconnect</Button></div>
+      </form>
+      <div className="test-send">
+        <h3>Encryption key</h3>
+        <p className="muted small">Protects the saved SMTP password. Another computer using this database needs the same key, entered during its setup.</p>
+        <div className="secret-row">
+          <input readOnly value={revealed ? connections.secret : "•".repeat(24)} aria-label="Encryption key" />
+          <Button type="button" variant="ghost" icon="eye" onClick={() => setRevealed(v => !v)}>{revealed ? "Hide" : "Show"}</Button>
+          <Button type="button" variant="secondary" icon={copied ? "check" : "file"} onClick={copy}>{copied ? "Copied" : "Copy"}</Button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function AdminCard({ connections }: { connections: Connections }) {
+  const { save, saving, errors } = useSetupSave();
+  const [form, setForm] = useState({ adminEmail: connections.adminEmail, adminPassword: "", confirm: "", currentPassword: "" });
+  const [mismatch, setMismatch] = useState(false);
+  const dirty = form.adminEmail !== connections.adminEmail || !!form.adminPassword;
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    if (form.adminPassword !== form.confirm) { setMismatch(true); return; }
+    save({ adminEmail: form.adminEmail, adminPassword: form.adminPassword, currentPassword: form.currentPassword }, "Admin account updated");
+  }
+  const field = (key: keyof typeof form, label: string, type: string, autoComplete: string, error?: string, note?: string) => (
+    <label className={`field ${error ? "has-error" : ""}`}><span className="field-label">{label}</span>
+      <input type={type} autoComplete={autoComplete} value={form[key]} onChange={e => { setForm({ ...form, [key]: e.target.value }); setMismatch(false); }} />
+      {error ? <span className="field-error">{error}</span> : note && <span className="field-note">{note}</span>}
+    </label>
+  );
+  return (
+    <section className="panel">
+      <div className="panel-head"><div><h2>Admin account</h2><p className="muted small">The sign-in for this computer.</p></div></div>
+      <form onSubmit={submit}>
+        {field("adminEmail", "Email", "email", "username", errors.adminEmail)}
+        {field("adminPassword", "New password", "password", "new-password", errors.adminPassword, "Leave blank to keep the current password.")}
+        {form.adminPassword && field("confirm", "Confirm new password", "password", "new-password", mismatch ? "Passwords do not match" : undefined)}
+        {dirty && field("currentPassword", "Current password", "password", "current-password", errors.currentPassword)}
+        <div className="form-actions"><Button type="submit" loading={saving} disabled={!dirty || !form.currentPassword}>Update account</Button></div>
+      </form>
     </section>
   );
 }

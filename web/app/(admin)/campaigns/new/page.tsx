@@ -103,7 +103,7 @@ export default function NewCampaignPage() {
       const started = await api<{ queued: number }>(`/api/v1/campaigns/${campaignId}/start`, { method: "POST" });
       update(2, { state: "done", detail: `${formatNumber(started.queued)} queued` });
       sent.current = true;
-      window.setTimeout(() => router.push(`/campaigns/${campaignId}`), 900);
+      window.setTimeout(() => router.push(`/campaigns/view?id=${campaignId}`), 900);
     } catch (err) {
       update(current, { state: "error", detail: (err as Error).message });
       if (campaignId) sent.current = true;

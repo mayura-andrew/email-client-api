@@ -741,3 +741,22 @@ button.stat.is-active { border-color: var(--brand); box-shadow: 0 0 0 3px var(--
 .audience-start .recipient-form > .btn { margin-top: 2px; justify-self: end; }
 .field-suggestion { flex-wrap: nowrap; }
 .field-suggestion > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+
+/* Setup (first run and connection recovery) */
+.login-form.setup-form { max-width: 440px; }
+.setup-form h1 + p { margin-bottom: 18px; }
+.setup-form .field-hint { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.setup-banner { margin: 0 0 16px; font-size: 13px; word-break: break-word; }
+.field-note { font-weight: 400; font-size: 12px; color: var(--muted); }
+.setup-test { display: grid; gap: 10px; margin-top: 14px; justify-items: start; }
+.setup-checks { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: 12.5px; }
+.setup-checks li { display: flex; align-items: flex-start; gap: 7px; word-break: break-word; }
+.setup-checks li svg { flex: none; margin-top: 2px; }
+.setup-checks .is-ok { color: #16794b; }
+.setup-checks .is-bad { color: var(--failed); }
+.setup-advanced { margin-top: 16px; }
+.link-button { background: none; border: 0; padding: 0; font: inherit; font-size: 13px; color: var(--brand); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.setup-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 22px; }
+.setup-actions .btn-block { flex: 1; }
+.secret-row { display: flex; gap: 8px; }
+.secret-row input { flex: 1; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }

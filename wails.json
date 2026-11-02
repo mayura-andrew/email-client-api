@@ -1,0 +1,17 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "AI4ALL Certificate Mailer",
+  "outputfilename": "certificate-mailer",
+  "frontend:dir": "web",
+  "frontend:install": "bun install --frozen-lockfile",
+  "frontend:build": "bun run build",
+  "author": {
+    "name": "mayura-andrew"
+  },
+  "info": {
+    "companyName": "AI4ALL",
+    "productName": "AI4ALL Certificate Mailer",
+    "productVersion": "1.0.0",
+    "comments": "Bulk certificate delivery"
+  }
+}
